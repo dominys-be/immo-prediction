@@ -1,0 +1,50 @@
+# ── Data (scraped files can be very large) ─────────────────────────────────
+data/
+!data/fetch_statbel.py
+*.csv
+*.json.bak
+
+# ── Trained models (large binaries) ────────────────────────────────────────
+immo_api/models/model.pkl
+
+# ── Local tools / dev-only scripts ──────────────────────────────────────────
+test_price.py
+
+# ── Claude settings ──────────────────────────────────────────────────────────
+.claude/
+
+# ── OVH log output ───────────────────────────────────────────────────────────
+logs/
+
+# ── Odoo batch credentials (never commit) ────────────────────────────────────
+odoo_batch/.env
+
+# ── Internal / Turkish-language guides (local use only) ────────────────────
+ODOO_STUDIO_GUIDE.md
+scores.md
+OVH_DEPLOYMENT.md
+
+# ── Python cache ────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# ── Virtual environments ────────────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── Jupyter ─────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── Environment variables / secrets ─────────────────────────────────────────
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# ── Editor / OS ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/settings.json
