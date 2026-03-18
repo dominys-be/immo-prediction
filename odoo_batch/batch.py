@@ -61,6 +61,7 @@ FIELD_MAP = {
     "x_facades":          "number_of_facades",
     "x_peb":              "peb",
     "x_avis":             "avis",
+    "x_street":           "street",
     "x_commune":          "commune",
     "x_state_of_building":"state_of_building",
     "x_type_of_property": "type_of_property",

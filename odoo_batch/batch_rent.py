@@ -57,6 +57,7 @@ FIELD_MAP = {
     "x_bedroom_count":      "bedroom_count",
     "x_room_count":         "room_count",
     "x_facades":            "number_of_facades",
+    "x_street":             "street",
     "x_commune":            "commune",
     "x_state_of_building":  "state_of_building",
     "x_type_of_property":   "type_of_property",
