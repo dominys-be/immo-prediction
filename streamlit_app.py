@@ -324,6 +324,25 @@ with tab_rent:
                 "Monthly charges (EUR)", min_value=0, max_value=2000, value=0, step=10, key="r_charges"
             )
 
+        # ── PEB & Avis ────────────────────────────────────────────────────────
+        st.subheader("Energy & Quality Rating")
+
+        peb_options = ["A", "B", "C", "D", "E", "F", "G"]
+        peb_labels  = {
+            "A": "A (+4.5%)", "B": "B (+3.5%)", "C": "C (+1.75%)", "D": "D (0%)",
+            "E": "E (-1.75%)", "F": "F (-3.5%)", "G": "G (-4.5%)",
+        }
+        avis_labels = {
+            "A": "A (+7.5%)", "B": "B (+5.0%)", "C": "C (+2.5%)", "D": "D (0%)",
+            "E": "E (-2.5%)", "F": "F (-5.0%)", "G": "G (-7.5%)",
+        }
+
+        rp1, rp2 = st.columns(2)
+        r_peb  = rp1.select_slider("PEB (Energy Performance)", options=peb_options,
+                                    value="D", format_func=lambda x: peb_labels[x], key="r_peb")
+        r_avis = rp2.select_slider("Avis (Quality Rating)", options=peb_options,
+                                    value="D", format_func=lambda x: avis_labels[x], key="r_avis")
+
         rent_submitted = st.form_submit_button(
             "🔍 Predict Monthly Rent", use_container_width=True, type="primary"
         )
@@ -369,20 +388,41 @@ with tab_rent:
                 else:
                     st.warning("Street not found via geocoding — using commune centroid instead.")
 
-            rent = predict_rent(r_inp)
+            rent_base = predict_rent(r_inp)
+            peb_pct   = PEB_SCORES.get(r_peb,  0.0)
+            avis_pct  = AVIS_SCORES.get(r_avis, 0.0)
+            rent      = rent_base * (1 + peb_pct) * (1 + avis_pct)
+            peb_eur   = rent_base * peb_pct
+            avis_eur  = rent_base * (1 + peb_pct) * avis_pct
 
             st.divider()
             st.subheader("Rental Estimation Result")
 
-            rres1, rres2, rres3 = st.columns(3)
-            rres1.metric("Estimated monthly rent", f"€{rent:,.0f}/month")
-            rres2.metric("Annual rent", f"€{rent * 12:,.0f}/year")
-            rres3.metric("Weekly equivalent", f"€{rent / 4.33:,.0f}/week")
+            rres1, rres2, rres3, rres4 = st.columns(4)
+            rres1.metric("Base rent (model)", f"€{rent_base:,.0f}/month")
+            rres2.metric(f"PEB {r_peb} ({peb_pct*100:+.2f}%)",
+                         f"€{peb_eur:+,.0f}",
+                         delta_color="normal" if peb_eur >= 0 else "inverse")
+            rres3.metric(f"Avis {r_avis} ({avis_pct*100:+.2f}%)",
+                         f"€{avis_eur:+,.0f}",
+                         delta_color="normal" if avis_eur >= 0 else "inverse")
+            rres4.metric("ESTIMATED RENT", f"€{rent:,.0f}/month")
 
             st.progress(
                 min(rent / 5000, 1.0),
                 text=f"€{rent:,.0f}/month / €5,000 reference ceiling"
             )
+
+            with st.expander("PEB × Avis combination table"):
+                import pandas as pd
+                rows = []
+                for p in ["A", "B", "C", "D", "E", "F", "G"]:
+                    row = {"PEB \\ Avis": p}
+                    for a in ["A", "B", "C", "D", "E", "F", "G"]:
+                        row[a] = f"€{rent_base * (1 + PEB_SCORES[p]) * (1 + AVIS_SCORES[a]):,.0f}"
+                    rows.append(row)
+                df_table = pd.DataFrame(rows).set_index("PEB \\ Avis")
+                st.dataframe(df_table, use_container_width=True)
 
         except Exception as e:
             st.error(f"Error: {e}")
