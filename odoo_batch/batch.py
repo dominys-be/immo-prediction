@@ -55,23 +55,21 @@ logger = logging.getLogger("odoo_batch")
 # Maps Odoo Studio field names -> /predict parameter names
 
 FIELD_MAP = {
-    "x_living_area":      "living_area",
-    "x_bedroom_count":    "bedroom_count",
-    "x_room_count":       "room_count",
-    "x_facades":          "number_of_facades",
-    "x_peb":              "peb",
-    "x_avis":             "avis",
-    "x_street":           "street",
-    "x_commune":          "commune",
-    "x_state_of_building":"state_of_building",
-    "x_type_of_property": "type_of_property",
-    "x_postal_code":      "postal_code",
-    "x_region":           "region",
-    "x_surface_of_plot":  "surface_of_plot",
-    "x_bathroom_count":   "bathroom_count",
-    "x_garden":           "garden",
-    "x_terrace":          "terrace",
-    "x_swimming_pool":    "swimming_pool",
+    "x_studio_x_living_area":      "living_area",
+    "x_studio_x_bedroom_count":    "bedroom_count",
+    "x_studio_x_room_count":       "room_count",
+    "x_studio_x_facades":          "number_of_facades",
+    "x_studio_x_peb":              "peb",
+    "x_studio_x_avis":             "avis",
+    "x_studio_x_street":           "street",
+    "x_studio_x_commune":          "commune",
+    "x_studio_x_state_of_building":"state_of_building",
+    "x_studio_x_type_of_property": "type_of_property",
+    "x_studio_x_postal_code":      "postal_code",
+    "x_studio_x_region":           "region",
+    "x_studio_x_garden":           "garden",
+    "x_studio_x_terrace":          "terrace",
+    "x_studio_x_swimming_pool":    "swimming_pool",
 }
 
 ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_studio_x_predicted_price"]
