@@ -14,7 +14,7 @@ from flask_cors import CORS
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 
-from predictor import predict, get_metadata, get_feature_names
+from predictor import predict, get_metadata, get_feature_names, predict_rent, get_rental_metadata
 
 _geolocator = Nominatim(user_agent="immoapp-price-predictor")
 
@@ -103,6 +103,70 @@ def predict_price():
         "predicted_price": round(price, 2),
         "currency": "EUR",
     })
+
+
+@app.post("/predict-rent")
+def predict_rent_price():
+    """
+    Predict Belgian monthly rental price.
+
+    Same input schema as /predict — required: room_count, living_area,
+    number_of_facades, bedroom_count.
+    PEB / Avis multipliers are NOT applied for rentals.
+    """
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    required = ["room_count", "living_area", "number_of_facades", "bedroom_count"]
+    missing = [f for f in required if f not in body]
+    if missing:
+        return jsonify({"error": f"Missing required fields: {missing}"}), 400
+
+    errors = []
+    if not (10 <= float(body.get("living_area", 50)) <= 1000):
+        errors.append("living_area must be 10–1000 m²")
+    if not (1 <= int(body.get("number_of_facades", 1)) <= 4):
+        errors.append("number_of_facades must be 1–4")
+    if errors:
+        return jsonify({"error": "; ".join(errors)}), 400
+
+    # Street-level geocoding (optional)
+    street = body.get("street", "").strip()
+    if street:
+        coords = _geocode(street, str(body.get("house_number", "")), body.get("postal_code", 1000))
+        if coords:
+            body = dict(body, latitude=coords[0], longitude=coords[1])
+
+    try:
+        rent = predict_rent(body)
+    except Exception as e:
+        _logger.exception("Rental prediction failed")
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
+
+    return jsonify({
+        "predicted_rent": round(rent, 2),
+        "currency": "EUR",
+        "unit": "per month",
+    })
+
+
+@app.get("/health-rent")
+def health_rent():
+    """Rental model liveness + info endpoint."""
+    try:
+        meta = get_rental_metadata()
+        return jsonify({
+            "status": "ok",
+            "model_name":    meta.get("model_name", "unknown"),
+            "r2":            meta.get("r2"),
+            "mae":           meta.get("mae"),
+            "trained_at":    meta.get("trained_at"),
+            "feature_count": meta.get("feature_count"),
+            "rent_range_eur": meta.get("rent_range_eur"),
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 503
 
 
 @app.get("/features")

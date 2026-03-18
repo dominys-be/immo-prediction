@@ -31,6 +31,13 @@ _FEATURE_NAMES: list[str] | None = None
 _MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "model.pkl")
 _FEAT_PATH  = os.path.join(os.path.dirname(__file__), "models", "model_metadata.json")
 
+# Rental model (separate)
+_RENTAL_MODEL = None
+_RENTAL_FEATURE_NAMES: list[str] | None = None
+
+_RENTAL_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "rental_model.pkl")
+_RENTAL_FEAT_PATH  = os.path.join(os.path.dirname(__file__), "models", "rental_model_metadata.json")
+
 
 def get_model():
     global _MODEL
@@ -57,6 +64,37 @@ def get_feature_names() -> list[str]:
 def get_metadata() -> dict:
     if os.path.exists(_FEAT_PATH):
         with open(_FEAT_PATH) as f:
+            return json.load(f)
+    return {}
+
+
+# ── Rental model helpers ─────────────────────────────────────────────────────
+
+def get_rental_model():
+    global _RENTAL_MODEL
+    if _RENTAL_MODEL is None:
+        _logger.info("Loading rental model from %s", _RENTAL_MODEL_PATH)
+        _RENTAL_MODEL = joblib.load(_RENTAL_MODEL_PATH)
+        _logger.info("Rental model loaded: %s", type(_RENTAL_MODEL).__name__)
+    return _RENTAL_MODEL
+
+
+def get_rental_feature_names() -> list[str]:
+    global _RENTAL_FEATURE_NAMES
+    if _RENTAL_FEATURE_NAMES is None:
+        if os.path.exists(_RENTAL_FEAT_PATH):
+            with open(_RENTAL_FEAT_PATH) as f:
+                meta = json.load(f)
+            _RENTAL_FEATURE_NAMES = meta.get("features", [])
+        else:
+            m = get_rental_model()
+            _RENTAL_FEATURE_NAMES = list(getattr(m, "feature_names_in_", []))
+    return _RENTAL_FEATURE_NAMES
+
+
+def get_rental_metadata() -> dict:
+    if os.path.exists(_RENTAL_FEAT_PATH):
+        with open(_RENTAL_FEAT_PATH) as f:
             return json.load(f)
     return {}
 
@@ -495,3 +533,136 @@ def predict(inp: dict) -> float:
     peb_pct  = PEB_SCORES.get(peb_raw,  0.0)
     avis_pct = AVIS_SCORES.get(avis_raw, 0.0)
     return base_price * (1 + peb_pct) * (1 + avis_pct)
+
+
+# --------------------------------------------------------------------------- #
+# Rental prediction
+# --------------------------------------------------------------------------- #
+
+_RENTAL_DEFAULTS = {
+    "BedroomCount": 1,
+    "RoomCount": 3,
+    "NumberOfFacades": 1,
+    "StateOfBuilding_Num": 1,
+    "TypeOfProperty_Num": 1,   # apartment default for rentals
+    "Region_Num": 0,
+    "HeatingType_Num": 0,
+    "Furnished": 0,
+    "Terrace": 0,
+    "Garden": 0,
+    "SwimmingPool": 0,
+    "Fireplace": 0,
+    "Lift": 0,
+    "Kitchen": 0,
+    "Garage": 0,
+    "MonthlyCharges": 0,
+    "HouseAge": 30,
+    "BedroomRatio": 0.4,
+    "Latitude": 50.8503,
+    "Longitude": 4.3517,
+    "DistanceToBrussels": 80,
+    "PostalCode": 1000,
+    "FloorNumber": 0,
+    "EPCkWh": 200,
+    "MedianIncome": 25000,
+    "PopulationDensity": 400,
+}
+
+_RENTAL_ALIAS = {
+    "living_area":          "LivingArea",
+    "bedroom_count":        "BedroomCount",
+    "room_count":           "RoomCount",
+    "number_of_facades":    "NumberOfFacades",
+    "furnished":            "Furnished",
+    "terrace":              "Terrace",
+    "garden":               "Garden",
+    "swimming_pool":        "SwimmingPool",
+    "fireplace":            "Fireplace",
+    "lift":                 "Lift",
+    "kitchen":              "Kitchen",
+    "garage":               "Garage",
+    "monthly_charges":      "MonthlyCharges",
+    "construction_year":    "ConstructionYear",
+    "floor_number":         "FloorNumber",
+    "postal_code":          "PostalCode",
+    "latitude":             "Latitude",
+    "longitude":            "Longitude",
+    "distance_to_brussels": "DistanceToBrussels",
+    "epc_kwh":              "EPCkWh",
+    "state_of_building":    "_state",
+    "type_of_property":     "_type",
+    "region":               "_region",
+    "heating_type":         "_heating",
+    "commune":              "_commune",
+}
+
+
+def predict_rent(inp: dict) -> float:
+    """
+    Predict monthly rental price (EUR/month) for a Belgian property.
+
+    Uses the dedicated rental model (rental_model.pkl) trained on
+    residential_monthly_rent listings from Immoweb.
+
+    Parameters are identical to predict() — same snake_case keys accepted.
+    PEB and Avis multipliers are NOT applied (not relevant for rentals).
+
+    Returns
+    -------
+    float — estimated monthly rent in EUR
+    """
+    model         = get_rental_model()
+    feature_names = get_rental_feature_names()
+
+    data: dict = dict(_RENTAL_DEFAULTS)
+
+    for k, v in inp.items():
+        if k in ("peb", "avis"):
+            continue
+        mapped = _RENTAL_ALIAS.get(k, k)
+        if mapped.startswith("_"):
+            data[mapped] = v
+        else:
+            data[mapped] = int(v) if isinstance(v, bool) else v
+
+    # Commune → lat/lon
+    commune_raw = data.pop("_commune", None)
+    if commune_raw:
+        coords = get_commune_latlon(str(commune_raw))
+        if coords:
+            data["Latitude"], data["Longitude"] = coords
+            data["DistanceToBrussels"] = _haversine(
+                coords[0], coords[1],
+                _BRUSSELS_COORDS[0], _BRUSSELS_COORDS[1],
+            )
+
+    # Encode categoricals
+    if "_state" in data:
+        raw = str(data.pop("_state")).strip()
+        data["StateOfBuilding_Num"] = STATE_MAP.get(raw, STATE_MAP.get(raw.upper(), 1))
+    if "_type" in data:
+        raw = str(data.pop("_type")).strip()
+        data["TypeOfProperty_Num"] = TYPE_MAP.get(raw, TYPE_MAP.get(raw.upper(), 1))
+    if "_region" in data:
+        raw = str(data.pop("_region")).strip()
+        data["Region_Num"] = REGION_MAP.get(raw, 0)
+    if "_heating" in data:
+        raw = str(data.pop("_heating")).strip()
+        data["HeatingType_Num"] = HEATING_MAP.get(raw, HEATING_MAP.get(raw.upper(), 0))
+
+    # Derived
+    construction_year = data.pop("ConstructionYear", None)
+    if construction_year:
+        data["HouseAge"] = max(0, 2025 - int(construction_year))
+    room_count = max(data.get("RoomCount", 1), 1)
+    data["BedroomRatio"] = data.get("BedroomCount", 1) / room_count
+
+    if feature_names:
+        for feat in feature_names:
+            if feat not in data:
+                data[feat] = 0
+        df_row = pd.DataFrame([data], columns=feature_names)
+    else:
+        df_row = pd.DataFrame([data])
+
+    return float(model.predict(df_row)[0])

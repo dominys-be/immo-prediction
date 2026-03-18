@@ -1,0 +1,41 @@
+{
+  "model_name": "RandomForest (Rental)",
+  "version": "1.0",
+  "target": "monthly_rent_eur",
+  "r2": 0.8124,
+  "mae": 230.0,
+  "dataset_size": 9921,
+  "feature_count": 24,
+  "features": [
+    "LivingArea",
+    "BedroomCount",
+    "RoomCount",
+    "NumberOfFacades",
+    "StateOfBuilding_Num",
+    "TypeOfProperty_Num",
+    "Furnished",
+    "Terrace",
+    "Garden",
+    "SwimmingPool",
+    "Fireplace",
+    "Lift",
+    "Kitchen",
+    "Garage",
+    "MonthlyCharges",
+    "HouseAge",
+    "BedroomRatio",
+    "Latitude",
+    "Longitude",
+    "DistanceToBrussels",
+    "PostalCode",
+    "FloorNumber",
+    "MedianIncome",
+    "PopulationDensity"
+  ],
+  "trained_at": "2026-03-18T08:44:47",
+  "rent_range_eur": {
+    "min": 250,
+    "median": 1050,
+    "max": 10000
+  }
+}
