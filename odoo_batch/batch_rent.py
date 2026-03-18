@@ -4,9 +4,9 @@ batch_rent.py — Odoo SaaS rental estimation batch script.
 Runs on OVH VPS (cron every 5 minutes).
 Flow:
   1. Authenticate to Odoo SaaS via XML-RPC
-  2. Fetch rental records where x_predicted_rent = 0 (not yet estimated)
+  2. Fetch rental records where x_studio_x_predicted_rent = 0 (not yet estimated)
   3. Call /predict-rent for each record
-  4. Write the monthly rent estimate back to Odoo (x_predicted_rent field)
+  4. Write the monthly rent estimate back to Odoo (x_studio_x_predicted_rent field)
 
 Configuration: same .env as batch.py — uses ODOO_RENT_MODEL for the Odoo model name.
 
@@ -76,7 +76,7 @@ FIELD_MAP = {
     "x_avis":               "avis",
 }
 
-ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_predicted_rent"]
+ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_studio_x_predicted_rent"]
 
 REQUIRED_PREDICT = {"room_count", "living_area", "number_of_facades", "bedroom_count"}
 
@@ -99,7 +99,7 @@ def fetch_pending(uid, models):
     domain = [
         "&",
         ("x_transaction_type", "=", "location"),
-        "|", ("x_predicted_rent", "=", 0), ("x_predicted_rent", "=", False),
+        "|", ("x_studio_x_predicted_rent", "=", 0), ("x_studio_x_predicted_rent", "=", False),
     ]
     records = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
@@ -140,7 +140,7 @@ def write_rent(uid, models, record_id, rent):
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_RENT_MODEL, "write",
-        [[record_id], {"x_predicted_rent": rent}],
+        [[record_id], {"x_studio_x_predicted_rent": rent}],
     )
 
 

@@ -4,9 +4,9 @@ batch.py — Odoo SaaS <-> ImmoApp prediction batch script.
 Runs on OVH VPS (cron every 5 minutes).
 Flow:
   1. Authenticate to Odoo SaaS via XML-RPC
-  2. Fetch records where x_predicted_price = 0 (not yet estimated)
+  2. Fetch records where x_studio_x_predicted_price = 0 (not yet estimated)
   3. Call /predict for each record
-  4. Write the result back to Odoo (x_predicted_price field)
+  4. Write the result back to Odoo (x_studio_x_predicted_price field)
 
 Configuration: copy .env.example to .env and fill in credentials.
 
@@ -74,7 +74,7 @@ FIELD_MAP = {
     "x_swimming_pool":    "swimming_pool",
 }
 
-ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_predicted_price"]
+ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_studio_x_predicted_price"]
 
 # Minimum required fields to call /predict
 REQUIRED_PREDICT = {"room_count", "living_area", "number_of_facades", "bedroom_count"}
@@ -98,8 +98,8 @@ def odoo_connect():
 
 
 def fetch_pending(uid, models):
-    """Return records where x_predicted_price is 0 or not set."""
-    domain = ["|", ("x_predicted_price", "=", 0), ("x_predicted_price", "=", False)]
+    """Return records where x_studio_x_predicted_price is 0 or not set."""
+    domain = ["|", ("x_studio_x_predicted_price", "=", 0), ("x_studio_x_predicted_price", "=", False)]
     records = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_MODEL, "search_read",
@@ -141,11 +141,11 @@ def call_predict(payload):
 
 
 def write_price(uid, models, record_id, price):
-    """Write x_predicted_price back to Odoo."""
+    """Write x_studio_x_predicted_price back to Odoo."""
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_MODEL, "write",
-        [[record_id], {"x_predicted_price": price}],
+        [[record_id], {"x_studio_x_predicted_price": price}],
     )
 
 
