@@ -53,23 +53,26 @@ logger = logging.getLogger("odoo_batch_rent")
 # ── Odoo field mapping ────────────────────────────────────────────────────────
 
 FIELD_MAP = {
-    "x_living_area":      "living_area",
-    "x_bedroom_count":    "bedroom_count",
-    "x_room_count":       "room_count",
-    "x_facades":          "number_of_facades",
-    "x_commune":          "commune",
-    "x_state_of_building":"state_of_building",
-    "x_type_of_property": "type_of_property",
-    "x_postal_code":      "postal_code",
-    "x_region":           "region",
-    "x_floor_number":     "floor_number",
-    "x_furnished":        "furnished",
-    "x_terrace":          "terrace",
-    "x_garden":           "garden",
-    "x_garage":           "garage",
-    "x_lift":             "lift",
-    "x_monthly_charges":  "monthly_charges",
-    "x_heating_type":     "heating_type",
+    "x_living_area":        "living_area",
+    "x_bedroom_count":      "bedroom_count",
+    "x_room_count":         "room_count",
+    "x_facades":            "number_of_facades",
+    "x_commune":            "commune",
+    "x_state_of_building":  "state_of_building",
+    "x_type_of_property":   "type_of_property",
+    "x_postal_code":        "postal_code",
+    "x_region":             "region",
+    "x_floor_number":       "floor_number",
+    "x_construction_year":  "construction_year",
+    "x_furnished":          "furnished",
+    "x_terrace":            "terrace",
+    "x_garden":             "garden",
+    "x_garage":             "garage",
+    "x_lift":               "lift",
+    "x_monthly_charges":    "monthly_charges",
+    "x_heating_type":       "heating_type",
+    "x_peb":                "peb",
+    "x_avis":               "avis",
 }
 
 ODOO_FIELDS = list(FIELD_MAP.keys()) + ["id", "x_predicted_rent"]
@@ -92,7 +95,11 @@ def odoo_connect():
 
 
 def fetch_pending(uid, models):
-    domain = ["|", ("x_predicted_rent", "=", 0), ("x_predicted_rent", "=", False)]
+    domain = [
+        "&",
+        ("x_transaction_type", "=", "location"),
+        "|", ("x_predicted_rent", "=", 0), ("x_predicted_rent", "=", False),
+    ]
     records = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_RENT_MODEL, "search_read",

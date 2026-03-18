@@ -605,14 +605,19 @@ def predict_rent(inp: dict) -> float:
     residential_monthly_rent listings from Immoweb.
 
     Parameters are identical to predict() — same snake_case keys accepted.
-    PEB and Avis multipliers are NOT applied (not relevant for rentals).
+    PEB and Avis multipliers are applied as post-prediction score multipliers
+    (same percentages as the sale model).
 
     Returns
     -------
-    float — estimated monthly rent in EUR
+    float — adjusted monthly rent in EUR
     """
     model         = get_rental_model()
     feature_names = get_rental_feature_names()
+
+    # Extract PEB/Avis before building feature dict (NOT sent to model)
+    peb_raw  = str(inp.get("peb",  "D")).strip().upper()
+    avis_raw = str(inp.get("avis", "D")).strip().upper()
 
     data: dict = dict(_RENTAL_DEFAULTS)
 
@@ -665,4 +670,9 @@ def predict_rent(inp: dict) -> float:
     else:
         df_row = pd.DataFrame([data])
 
-    return float(model.predict(df_row)[0])
+    base_rent = float(model.predict(df_row)[0])
+
+    # Apply score multipliers (same as sale model — scores.md)
+    peb_pct  = PEB_SCORES.get(peb_raw,  0.0)
+    avis_pct = AVIS_SCORES.get(avis_raw, 0.0)
+    return base_rent * (1 + peb_pct) * (1 + avis_pct)

@@ -1,50 +1,55 @@
-# ── Data (scraped files can be very large) ─────────────────────────────────
+# ── Trained models (large binaries — copy via SCP) ──────────────────────────
+immo_api/models/*.pkl
+models/
+
+# ── Data files (scraped / large) ────────────────────────────────────────────
 data/
 !data/fetch_statbel.py
 *.csv
 *.json.bak
 
-# ── Trained models (large binaries) ────────────────────────────────────────
-immo_api/models/model.pkl
+# ── Local training scripts ───────────────────────────────────────────────────
+train_rental.py
+batch.py
 
-# ── Local tools / dev-only scripts ──────────────────────────────────────────
+# ── Local dev / test scripts ─────────────────────────────────────────────────
 test_price.py
 
-# ── Claude settings ──────────────────────────────────────────────────────────
-.claude/
-
-# ── OVH log output ───────────────────────────────────────────────────────────
-logs/
+# ── Internal guides (local use only, not for company repo) ───────────────────
+ODOO_STUDIO_GUIDE.md
+OVH_DEPLOYMENT.md
+scores.md
 
 # ── Odoo batch credentials (never commit) ────────────────────────────────────
 odoo_batch/.env
 
-# ── Internal / Turkish-language guides (local use only) ────────────────────
-ODOO_STUDIO_GUIDE.md
-scores.md
-OVH_DEPLOYMENT.md
+# ── Claude AI settings ───────────────────────────────────────────────────────
+.claude/
 
-# ── Python cache ────────────────────────────────────────────────────────────
+# ── Log files ────────────────────────────────────────────────────────────────
+logs/
+
+# ── Python cache ─────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
 .Python
 
-# ── Virtual environments ────────────────────────────────────────────────────
+# ── Virtual environments ─────────────────────────────────────────────────────
 venv/
 .venv/
 env/
 
-# ── Jupyter ─────────────────────────────────────────────────────────────────
+# ── Jupyter ──────────────────────────────────────────────────────────────────
 .ipynb_checkpoints/
 
-# ── Environment variables / secrets ─────────────────────────────────────────
+# ── Environment variables / secrets ──────────────────────────────────────────
 .env
 .env.*
 !.env.example
 !**/.env.example
 
-# ── Editor / OS ─────────────────────────────────────────────────────────────
+# ── Editor / OS ──────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 .vscode/settings.json

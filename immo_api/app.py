@@ -112,7 +112,7 @@ def predict_rent_price():
 
     Same input schema as /predict — required: room_count, living_area,
     number_of_facades, bedroom_count.
-    PEB / Avis multipliers are NOT applied for rentals.
+    PEB / Avis multipliers ARE applied as post-prediction score multipliers (same as sale model).
     """
     body = request.get_json(silent=True)
     if not body:

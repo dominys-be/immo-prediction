@@ -374,6 +374,8 @@ with tab_rent:
             state_of_building = r_state_of_building.upper().replace(" ", "_"),
             heating_type      = heating_map_input.get(r_heating_type, "GAS"),
             commune           = r_commune.strip() if r_commune.strip() else None,
+            peb               = r_peb,
+            avis              = r_avis,
         )
         if not r_inp["commune"]:
             del r_inp["commune"]
@@ -388,12 +390,12 @@ with tab_rent:
                 else:
                     st.warning("Street not found via geocoding — using commune centroid instead.")
 
-            rent_base = predict_rent(r_inp)
-            peb_pct   = PEB_SCORES.get(r_peb,  0.0)
-            avis_pct  = AVIS_SCORES.get(r_avis, 0.0)
-            rent      = rent_base * (1 + peb_pct) * (1 + avis_pct)
+            rent     = predict_rent(r_inp)
+            peb_pct  = PEB_SCORES.get(r_peb,  0.0)
+            avis_pct = AVIS_SCORES.get(r_avis, 0.0)
+            rent_base = rent / ((1 + peb_pct) * (1 + avis_pct))
             peb_eur   = rent_base * peb_pct
-            avis_eur  = rent_base * (1 + peb_pct) * avis_pct
+            avis_eur  = rent - rent_base * (1 + peb_pct)
 
             st.divider()
             st.subheader("Rental Estimation Result")
