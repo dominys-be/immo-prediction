@@ -9,12 +9,48 @@ GET  /features  → full feature list with allowed values (for Odoo Studio)
 """
 
 import logging
+import os
+import xmlrpc.client
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
 
 from predictor import predict, get_metadata, get_feature_names, predict_rent, get_rental_metadata
+
+# Odoo credentials for webhook write-back
+_ODOO_URL   = os.getenv("ODOO_URL", "")
+_ODOO_DB    = os.getenv("ODOO_DB", "")
+_ODOO_USER  = os.getenv("ODOO_USER", "")
+_ODOO_KEY   = os.getenv("ODOO_APIKEY", "")
+_ODOO_MODEL = os.getenv("ODOO_MODEL", "x_estimation")
+
+# Odoo Studio field name → predict() parameter name
+_WEBHOOK_FIELD_MAP = {
+    "x_studio_x_living_area":       "living_area",
+    "x_studio_x_bedroom_count":     "bedroom_count",
+    "x_studio_x_room_count":        "room_count",
+    "x_studio_x_facades":           "number_of_facades",
+    "x_studio_x_peb":               "peb",
+    "x_studio_x_avis":              "avis",
+    "x_studio_x_street":            "street",
+    "x_studio_x_commune":           "commune",
+    "x_studio_x_state_of_building": "state_of_building",
+    "x_studio_x_type_of_property":  "type_of_property",
+    "x_studio_x_region":            "region",
+    "x_studio_x_postal_code":       "postal_code",
+    "x_studio_x_construction_year": "construction_year",
+    "x_studio_x_heating_type":      "heating_type",
+    "x_studio_x_garage":            "garage",
+    "x_studio_x_garden":            "garden",
+    "x_studio_x_garden_area":       "garden_area",
+    "x_studio_x_swimming_pool":     "swimming_pool",
+    "x_studio_x_terrace":           "terrace",
+    "x_studio_x_fireplace":         "fireplace",
+    "x_studio_x_lift":              "lift",
+    "x_studio_x_solar_panels":      "has_solar_panels",
+    "x_studio_x_transaction_type":  "transaction_type",
+}
 
 _geolocator = Nominatim(user_agent="immoapp-price-predictor")
 
@@ -203,6 +239,69 @@ def features():
         },
         "required": ["room_count", "living_area", "number_of_facades", "bedroom_count"],
     })
+
+
+# --------------------------------------------------------------------------- #
+# Odoo Webhook endpoint
+# --------------------------------------------------------------------------- #
+
+@app.post("/odoo-webhook")
+def odoo_webhook():
+    """
+    Receives Odoo 'Envoyer une notification webhook' POST.
+    Maps Odoo Studio fields → predict() / predict_rent() → writes result back via XML-RPC.
+    """
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Empty body"}), 400
+
+    record_id = body.get("id")
+    if not record_id:
+        return jsonify({"error": "Missing record id"}), 400
+
+    # Map Odoo fields to prediction payload
+    payload = {}
+    for odoo_field, pred_field in _WEBHOOK_FIELD_MAP.items():
+        val = body.get(odoo_field)
+        if val not in (None, False, ""):
+            payload[pred_field] = val
+
+    transaction_type = payload.pop("transaction_type", "vente") or "vente"
+
+    # Geocode if street provided
+    street = payload.get("street", "").strip()
+    if street:
+        coords = _geocode(street, "", payload.get("postal_code", 1000))
+        if coords:
+            payload["latitude"], payload["longitude"] = coords
+
+    try:
+        if transaction_type == "location":
+            result_value = predict_rent(payload)
+            write_field = "x_studio_x_predicted_rent"
+        else:
+            result_value = predict(payload)
+            write_field = "x_studio_x_predicted_price"
+    except Exception as e:
+        _logger.exception("Webhook prediction failed")
+        return jsonify({"error": str(e)}), 500
+
+    # Write result back to Odoo via XML-RPC
+    try:
+        common = xmlrpc.client.ServerProxy(f"{_ODOO_URL}/xmlrpc/2/common")
+        uid = common.authenticate(_ODOO_DB, _ODOO_USER, _ODOO_KEY, {})
+        models = xmlrpc.client.ServerProxy(f"{_ODOO_URL}/xmlrpc/2/object")
+        models.execute_kw(
+            _ODOO_DB, uid, _ODOO_KEY,
+            _ODOO_MODEL, "write",
+            [[record_id], {write_field: round(result_value, 2)}],
+        )
+        _logger.info("Webhook: record %s → %s = %.2f", record_id, write_field, result_value)
+    except Exception as e:
+        _logger.exception("Odoo write-back failed")
+        return jsonify({"error": f"Odoo write failed: {str(e)}"}), 500
+
+    return jsonify({"status": "ok", "record_id": record_id, write_field: round(result_value, 2)})
 
 
 # --------------------------------------------------------------------------- #
