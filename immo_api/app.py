@@ -10,6 +10,7 @@ GET  /features  → full feature list with allowed values (for Odoo Studio)
 
 import logging
 import os
+import threading
 import xmlrpc.client
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -245,21 +246,8 @@ def features():
 # Odoo Webhook endpoint
 # --------------------------------------------------------------------------- #
 
-@app.post("/odoo-webhook")
-def odoo_webhook():
-    """
-    Receives Odoo 'Envoyer une notification webhook' POST.
-    Maps Odoo Studio fields → predict() / predict_rent() → writes result back via XML-RPC.
-    """
-    body = request.get_json(silent=True)
-    if not body:
-        return jsonify({"error": "Empty body"}), 400
-
+def _process_webhook(body):
     record_id = body.get("id")
-    if not record_id:
-        return jsonify({"error": "Missing record id"}), 400
-
-    # Map Odoo fields to prediction payload
     payload = {}
     for odoo_field, pred_field in _WEBHOOK_FIELD_MAP.items():
         val = body.get(odoo_field)
@@ -268,7 +256,6 @@ def odoo_webhook():
 
     transaction_type = payload.pop("transaction_type", "vente") or "vente"
 
-    # Geocode if street provided
     street = payload.get("street", "").strip()
     if street:
         coords = _geocode(street, "", payload.get("postal_code", 1000))
@@ -282,11 +269,10 @@ def odoo_webhook():
         else:
             result_value = predict(payload)
             write_field = "x_studio_x_predicted_price"
-    except Exception as e:
-        _logger.exception("Webhook prediction failed")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        _logger.exception("Webhook prediction failed for record %s", record_id)
+        return
 
-    # Write result back to Odoo via XML-RPC
     try:
         common = xmlrpc.client.ServerProxy(f"{_ODOO_URL}/xmlrpc/2/common")
         uid = common.authenticate(_ODOO_DB, _ODOO_USER, _ODOO_KEY, {})
@@ -297,11 +283,27 @@ def odoo_webhook():
             [[record_id], {write_field: round(result_value, 2)}],
         )
         _logger.info("Webhook: record %s → %s = %.2f", record_id, write_field, result_value)
-    except Exception as e:
-        _logger.exception("Odoo write-back failed")
-        return jsonify({"error": f"Odoo write failed: {str(e)}"}), 500
+    except Exception:
+        _logger.exception("Odoo write-back failed for record %s", record_id)
 
-    return jsonify({"status": "ok", "record_id": record_id, write_field: round(result_value, 2)})
+
+@app.post("/odoo-webhook")
+def odoo_webhook():
+    """
+    Receives Odoo 'Envoyer une notification webhook' POST.
+    Maps Odoo Studio fields → predict() / predict_rent() → writes result back via XML-RPC.
+    Returns 200 immediately; processing runs in a background thread.
+    """
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Empty body"}), 400
+
+    record_id = body.get("id")
+    if not record_id:
+        return jsonify({"error": "Missing record id"}), 400
+
+    threading.Thread(target=_process_webhook, args=(body,), daemon=True).start()
+    return jsonify({"status": "accepted", "record_id": record_id}), 200
 
 
 # --------------------------------------------------------------------------- #
