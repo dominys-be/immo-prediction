@@ -12,10 +12,14 @@ import logging
 import os
 import threading
 import xmlrpc.client
+from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from geopy.geocoders import Nominatim
 from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent / ".env")
 
 from predictor import predict, get_metadata, get_feature_names, predict_rent, get_rental_metadata
 
