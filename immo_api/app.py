@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from geopy.geocoders import Nominatim
-from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+from geopy.exc import GeocoderTimedOut, GeocoderUnavailable, GeocoderRateLimited
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
@@ -65,7 +65,7 @@ def _geocode(street: str, number: str, postal_code) -> tuple | None:
         loc = _geolocator.geocode(query, timeout=5)
         if loc:
             return loc.latitude, loc.longitude
-    except (GeocoderTimedOut, GeocoderUnavailable):
+    except (GeocoderTimedOut, GeocoderUnavailable, GeocoderRateLimited):
         pass
     return None
 
