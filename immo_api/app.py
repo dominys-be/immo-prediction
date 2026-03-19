@@ -258,7 +258,7 @@ def _process_webhook(body):
         if val not in (None, False, ""):
             payload[pred_field] = val
 
-    transaction_type = payload.pop("transaction_type", "vente") or "vente"
+    transaction_type = payload.pop("transaction_type", "") or ""
 
     street = payload.get("street", "").strip()
     if street:
@@ -266,8 +266,9 @@ def _process_webhook(body):
         if coords:
             payload["latitude"], payload["longitude"] = coords
 
+    is_rental = transaction_type.lower() in ("location", "à louer", "a louer", "louer")
     try:
-        if transaction_type == "location":
+        if is_rental:
             result_value = predict_rent(payload)
             write_field = "x_studio_x_predicted_rent"
         else:
