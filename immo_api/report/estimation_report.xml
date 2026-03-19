@@ -1,0 +1,305 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+<template id="report_estimation">
+<t t-call="web.html_container">
+<t t-foreach="docs" t-as="o">
+<t t-call="web.internal_layout">
+
+  <!-- CALCULS -->
+  <t t-set="transaction_type_val" t-value="(o.x_studio_x_transaction_type or '')"/>
+  <t t-set="is_location" t-value="'louer' in transaction_type_val.lower() or 'location' in transaction_type_val.lower()"/>
+  <t t-set="prix_vente"  t-value="o.x_studio_x_predicted_price  or 0"/>
+  <t t-set="prix_loyer"  t-value="o.x_studio_x_predicted_rent   or 0"/>
+  <t t-set="montant"     t-value="prix_loyer if is_location else prix_vente"/>
+  <t t-set="pess"        t-value="int(montant * 0.90)"/>
+  <t t-set="opti"        t-value="int(montant * 1.10)"/>
+  <t t-set="mont_str"    t-value="str(int(montant))"/>
+  <t t-set="pess_str"    t-value="str(pess)"/>
+  <t t-set="opti_str"    t-value="str(opti)"/>
+
+  <!-- Mediane -->
+  <t t-set="region_val"  t-value="(o.x_studio_x_region or '').lower()"/>
+  <t t-set="mediane"     t-value="480000 if ('bruxelles' in region_val or 'brussels' in region_val) else (340000 if ('flandre' in region_val or 'flanders' in region_val) else 220000)"/>
+  <t t-set="diff_pct"    t-value="round((montant - mediane) / mediane * 100, 1) if (mediane and montant) else 0"/>
+  <t t-set="med_str"     t-value="str(mediane)"/>
+  <t t-set="diff_str"    t-value="str(diff_pct)"/>
+
+  <!-- PEB -->
+  <t t-set="peb_val"     t-value="(o.x_studio_x_peb or '').upper().strip()"/>
+  <t t-set="peb_mults"   t-value="{'A':0.045,'B':0.035,'C':0.0175,'D':0.0,'E':-0.0175,'F':-0.035,'G':-0.045}"/>
+  <t t-set="peb_mult"    t-value="peb_mults.get(peb_val, 0.0)"/>
+  <t t-set="base"        t-value="int(montant / (1.0 + peb_mult)) if (peb_mult != 0 and montant) else int(montant)"/>
+  <t t-set="pA" t-value="str(int(base * 1.045))"/>
+  <t t-set="pB" t-value="str(int(base * 1.035))"/>
+  <t t-set="pC" t-value="str(int(base * 1.0175))"/>
+  <t t-set="pD" t-value="str(base)"/>
+  <t t-set="pE" t-value="str(int(base * 0.9825))"/>
+  <t t-set="pF" t-value="str(int(base * 0.965))"/>
+  <t t-set="pG" t-value="str(int(base * 0.955))"/>
+  <t t-set="peb_pct"     t-value="str(round(peb_mult * 100, 2))"/>
+
+<div class="page" style="font-family: Arial, sans-serif; color: #2c3e50; padding: 20px;">
+
+  <!-- EN-TETE -->
+  <table width="100%" style="margin-bottom: 30px; border-bottom: 3px solid #2980b9; padding-bottom: 20px;">
+    <tr>
+      <td width="60%">
+        <h1 style="color: #2980b9; font-size: 22px; margin: 0;">Rapport d'Estimation Immobiliere</h1>
+        <p style="color: #7f8c8d; margin: 4px 0 0 0; font-size: 12px;">Estimation par intelligence artificielle — Dominys</p>
+      </td>
+      <td width="40%" style="text-align: right; vertical-align: top; font-size: 11px; color: #7f8c8d;">
+        Date : <span t-field="o.create_date" t-options='{"format": "dd/MM/yyyy"}'/><br/>
+        <t t-if="o.x_studio_partner_id">
+          Client : <span t-field="o.x_studio_partner_id"/>
+        </t>
+      </td>
+    </tr>
+  </table>
+
+  <!-- RESULTAT PRINCIPAL -->
+  <t t-if="montant > 0">
+    <div style="background: #2980b9; color: white; border-radius: 8px; padding: 25px; text-align: center; margin-bottom: 25px;">
+      <p style="margin: 0 0 5px 0; font-size: 13px;">
+        <t t-if="is_location">Loyer mensuel estime</t>
+        <t t-else="">Prix de vente estime</t>
+      </p>
+      <p style="margin: 0; font-size: 36px; font-weight: bold;">
+        <t t-if="not is_location"><span t-field="o.x_studio_x_predicted_price"/> EUR</t>
+        <t t-if="is_location"><span t-field="o.x_studio_x_predicted_rent"/> EUR <span style="font-size: 16px;">/mois</span></t>
+      </p>
+      <t t-if="peb_val and peb_mult != 0">
+        <p style="margin: 8px 0 0 0; font-size: 11px;">
+          Impact PEB <span t-field="o.x_studio_x_peb"/> inclus
+        </p>
+      </t>
+    </div>
+  </t>
+  <t t-else="">
+    <div style="background: #f8f9fa; border: 2px dashed #bdc3c7; border-radius: 8px; padding: 20px; text-align: center; margin-bottom: 25px;">
+      <p style="color: #7f8c8d; margin: 0;">Estimation en cours de calcul...</p>
+    </div>
+  </t>
+
+  <!-- DETAILS DU BIEN -->
+  <h2 style="color: #2980b9; font-size: 15px; border-left: 4px solid #2980b9; padding-left: 10px; margin-bottom: 12px;">
+    Caracteristiques du bien
+  </h2>
+  <table width="100%" style="font-size: 11px; margin-bottom: 25px; border-collapse: collapse;">
+    <tr>
+      <td width="50%" style="vertical-align: top;">
+        <table width="100%">
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d; width: 50%;">Type de bien</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_type_of_property"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Surface habitable</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_living_area"/> m2</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Chambres / Pieces</td>
+            <td style="padding: 5px 0; font-weight: bold;">
+              <span t-field="o.x_studio_x_bedroom_count"/> / <span t-field="o.x_studio_x_room_count"/>
+            </td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Facades</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_facades"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Etat du batiment</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_state_of_building"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Annee construction</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_construction_year"/></td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0; color: #7f8c8d;">Chauffage</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_heating_type"/></td>
+          </tr>
+        </table>
+      </td>
+      <td width="50%" style="vertical-align: top; padding-left: 20px;">
+        <table width="100%">
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d; width: 50%;">Region</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_region"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Commune</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_commune"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Code postal</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_postal_code"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Rue</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_street"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Classe PEB</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_peb"/></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #ecf0f1;">
+            <td style="padding: 5px 0; color: #7f8c8d;">Transaction</td>
+            <td style="padding: 5px 0; font-weight: bold;"><span t-field="o.x_studio_x_transaction_type"/></td>
+          </tr>
+          <tr>
+            <td style="padding: 5px 0; color: #7f8c8d; vertical-align: top;">Equipements</td>
+            <td style="padding: 5px 0; font-size: 10px;">
+              <t t-if="o.x_studio_x_garage">Garage  </t>
+              <t t-if="o.x_studio_x_garden">Jardin  </t>
+              <t t-if="o.x_studio_x_terrace">Terrasse  </t>
+              <t t-if="o.x_studio_x_swimming_pool">Piscine  </t>
+              <t t-if="o.x_studio_x_fireplace">Cheminee  </t>
+              <t t-if="o.x_studio_x_lift">Ascenseur  </t>
+              <t t-if="o.x_studio_x_solar_panels">Panneaux solaires</t>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- SCENARIOS -->
+  <t t-if="montant > 0">
+    <h2 style="color: #2980b9; font-size: 15px; border-left: 4px solid #2980b9; padding-left: 10px; margin-bottom: 12px;">
+      Fourchette d'estimation
+    </h2>
+    <table width="100%" style="margin-bottom: 25px; border-collapse: collapse; text-align: center;">
+      <tr>
+        <td width="32%" style="padding: 15px; background: #fef9f0; border: 1px solid #f39c12; border-radius: 6px;">
+          <p style="margin: 0 0 5px 0; color: #e67e22; font-size: 11px; font-weight: bold;">SCENARIO BAS</p>
+          <p style="margin: 0; font-size: 20px; font-weight: bold; color: #e67e22;">
+            <span t-out="pess_str"/> EUR<t t-if="is_location">/mois</t>
+          </p>
+          <p style="margin: 4px 0 0 0; font-size: 10px; color: #7f8c8d;">-10%</p>
+        </td>
+        <td width="4%"/>
+        <td width="32%" style="padding: 15px; background: #eaf4fb; border: 2px solid #2980b9; border-radius: 6px;">
+          <p style="margin: 0 0 5px 0; color: #2980b9; font-size: 11px; font-weight: bold;">ESTIMATION IA</p>
+          <p style="margin: 0; font-size: 22px; font-weight: bold; color: #2980b9;">
+            <t t-if="not is_location"><span t-field="o.x_studio_x_predicted_price"/> EUR</t>
+            <t t-if="is_location"><span t-field="o.x_studio_x_predicted_rent"/> EUR /mois</t>
+          </p>
+          <p style="margin: 4px 0 0 0; font-size: 10px; color: #7f8c8d;">Valeur estimee</p>
+        </td>
+        <td width="4%"/>
+        <td width="32%" style="padding: 15px; background: #eafaf1; border: 1px solid #27ae60; border-radius: 6px;">
+          <p style="margin: 0 0 5px 0; color: #27ae60; font-size: 11px; font-weight: bold;">SCENARIO HAUT</p>
+          <p style="margin: 0; font-size: 20px; font-weight: bold; color: #27ae60;">
+            <span t-out="opti_str"/> EUR<t t-if="is_location">/mois</t>
+          </p>
+          <p style="margin: 4px 0 0 0; font-size: 10px; color: #7f8c8d;">+10%</p>
+        </td>
+      </tr>
+    </table>
+  </t>
+
+  <!-- COMPARAISON REGIONALE -->
+  <t t-if="montant > 0 and not is_location">
+    <h2 style="color: #2980b9; font-size: 15px; border-left: 4px solid #2980b9; padding-left: 10px; margin-bottom: 12px;">
+      Positionnement regional
+    </h2>
+    <div style="background: #f8f9fa; border-radius: 6px; padding: 15px; margin-bottom: 25px; font-size: 11px;">
+      <table width="100%">
+        <tr>
+          <td width="50%">
+            <p style="margin: 0 0 5px 0; color: #7f8c8d;">Prix median de reference — <span t-field="o.x_studio_x_region"/></p>
+            <p style="margin: 0; font-size: 18px; font-weight: bold; color: #2c3e50;">
+              <span t-out="med_str"/> EUR
+            </p>
+          </td>
+          <td width="50%" style="text-align: right; vertical-align: middle;">
+            <t t-if="diff_pct >= 0">
+              <span style="background: #eafaf1; color: #27ae60; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">
+                +<span t-out="diff_str"/>% vs mediane
+              </span>
+            </t>
+            <t t-else="">
+              <span style="background: #fef9f0; color: #e67e22; padding: 8px 15px; border-radius: 20px; font-weight: bold; font-size: 14px;">
+                <span t-out="diff_str"/>% vs mediane
+              </span>
+            </t>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </t>
+
+  <!-- IMPACT PEB -->
+  <t t-if="not is_location and base > 0">
+    <h2 style="color: #2980b9; font-size: 15px; border-left: 4px solid #2980b9; padding-left: 10px; margin-bottom: 12px;">
+      Simulation — Impact de la classe PEB
+    </h2>
+    <table width="100%" style="font-size: 11px; border-collapse: collapse; margin-bottom: 25px;">
+      <thead>
+        <tr style="background: #2980b9; color: white;">
+          <th style="padding: 8px 12px; text-align: left;">PEB</th>
+          <th style="padding: 8px 12px; text-align: center;">Performance</th>
+          <th style="padding: 8px 12px; text-align: center;">Impact</th>
+          <th style="padding: 8px 12px; text-align: right;">Prix estime</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background: #eafaf1;">
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #1a5276; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">A</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">Tres performant</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">+4,5%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pA"/> EUR</td>
+        </tr>
+        <tr style="background: #f8f9fa;">
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #27ae60; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">B</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">Performant</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">+3,5%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pB"/> EUR</td>
+        </tr>
+        <tr>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #2ecc71; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">C</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">Bon</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #27ae60;">+1,75%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pC"/> EUR</td>
+        </tr>
+        <tr style="background: #f8f9fa;">
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #f39c12; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">D</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #7f8c8d;">Moyen</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #7f8c8d;">0%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pD"/> EUR</td>
+        </tr>
+        <tr>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #e67e22; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">E</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #e67e22;">Peu performant</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #e67e22;">-1,75%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pE"/> EUR</td>
+        </tr>
+        <tr style="background: #f8f9fa;">
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1;"><span style="background: #e74c3c; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">F</span></td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #e74c3c;">Mauvais</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: center; color: #e74c3c;">-3,5%</td>
+          <td style="padding: 7px 12px; border-bottom: 1px solid #ecf0f1; text-align: right;"><span t-out="pF"/> EUR</td>
+        </tr>
+        <tr>
+          <td style="padding: 7px 12px;"><span style="background: #c0392b; color: white; padding: 2px 8px; border-radius: 3px; font-weight: bold;">G</span></td>
+          <td style="padding: 7px 12px; text-align: center; color: #c0392b;">Tres mauvais</td>
+          <td style="padding: 7px 12px; text-align: center; color: #c0392b;">-4,5%</td>
+          <td style="padding: 7px 12px; text-align: right;"><span t-out="pG"/> EUR</td>
+        </tr>
+      </tbody>
+    </table>
+  </t>
+
+  <!-- DISCLAIMER -->
+  <div style="border-top: 1px solid #ecf0f1; padding-top: 15px; margin-top: 10px;">
+    <p style="font-size: 9px; color: #95a5a6; line-height: 1.5; margin: 0;">
+      <strong>Avertissement :</strong> Cette estimation est fournie a titre purement informatif et ne constitue en aucun cas une offre d'achat, de vente ou de location, ni une evaluation certifiee au sens legal. Elle est calculee par un algorithme d'intelligence artificielle base sur des donnees historiques du marche immobilier belge. Les resultats peuvent differer de la valeur reelle de marche. Dominys decline toute responsabilite quant a l'utilisation de cette estimation dans le cadre d'une transaction immobiliere. Pour une evaluation certifiee, veuillez consulter un expert immobilier agree.
+    </p>
+  </div>
+
+</div>
+</t>
+</t>
+</t>
+</template>
+</odoo>

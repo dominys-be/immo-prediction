@@ -1,6 +1,6 @@
 # ImmoApp — Estimation de prix immobilier belge
 
-API de prédiction de prix et de loyers pour l'immobilier belge, intégrée avec Odoo SaaS via des scripts batch sur VPS OVH.
+API de prédiction de prix et de loyers pour l'immobilier belge, intégrée avec Odoo SaaS 19.2 via webhook et scripts batch sur VPS OVH Windows Server.
 
 | Modèle | R² | MAE | Données |
 |--------|----|-----|---------|
@@ -12,21 +12,28 @@ API de prédiction de prix et de loyers pour l'immobilier belge, intégrée avec
 ## Architecture
 
 ```
-Odoo SaaS (cloud)              VPS OVH
-        |                          |
-        |   XML-RPC API    +-------+--------------------+
-        |<---------------->|  batch.py      (vente)    |
-        |                  |  batch_rent.py (location) |
-        |                  |  cron : toutes les 3 j.   |
-        |                  |                           |
-        |                  |  Flask API  :5000         |
-        +------------------+  Nginx      :80           |
-                           +---------------------------+
+Odoo SaaS (cloud)                    VPS OVH — Windows Server
+        |                                        |
+        |   Webhook (création fiche)    +--------+---------------------+
+        |-----------------------------→ | Flask API  :8080             |
+        |   XML-RPC (écriture résultat) |  /predict                    |
+        |←------------------------------ |  /predict-rent               |
+        |                               |  /odoo-webhook               |
+        |   XML-RPC (batch)             |  /health                     |
+        |←-----------------------------→|                              |
+        |                               |  batch.py      (vente)       |
+        |                               |  batch_rent.py (location)    |
+        |                               |  Planificateur : tous les 3j |
+        |                               |  NSSM service (Waitress)     |
+        +                               +------------------------------+
 ```
 
-- **Odoo SaaS** : application Studio, champ `x_transaction_type` (vente/location), résultat écrit dans `x_predicted_price` ou `x_predicted_rent`
-- **VPS OVH** : héberge l'API Flask + les scripts batch
-- **Flux batch** : OVH récupère les fiches Odoo via XML-RPC → appelle `/predict` ou `/predict-rent` → réécrit le résultat
+**Flux webhook (instantané) :**
+1. Nouvelle fiche Odoo créée → automated action envoie un POST au VPS
+2. Flask prédit le prix → écrit le résultat via XML-RPC dans Odoo
+
+**Flux batch (toutes les 3 jours) :**
+- `batch.py` et `batch_rent.py` récupèrent toutes les fiches Odoo → recalculent les estimations
 
 ---
 
@@ -35,138 +42,178 @@ Odoo SaaS (cloud)              VPS OVH
 ```
 immo-prediction/
 ├── immo_api/
-│   ├── app.py              # API Flask — /predict, /predict-rent, /health, /features
+│   ├── app.py              # API Flask — /predict, /predict-rent, /odoo-webhook, /health
 │   ├── predictor.py        # Chargement des modèles, logique de prédiction
 │   ├── requirements.txt
+│   ├── .env                # Credentials Odoo (non versionné)
 │   └── models/
-│       ├── model.pkl                  # Modèle vente (non versionné — SCP)
+│       ├── model.pkl                  # Modèle vente (~1 Go, non versionné)
 │       ├── model_metadata.json
-│       ├── rental_model.pkl           # Modèle location (non versionné — SCP)
+│       ├── rental_model.pkl           # Modèle location (non versionné)
 │       └── rental_model_metadata.json
 ├── odoo_batch/
-│   ├── batch.py            # Batch XML-RPC vente (OVH → Odoo → /predict)
-│   ├── batch_rent.py       # Batch XML-RPC location (OVH → Odoo → /predict-rent)
+│   ├── batch.py            # Batch XML-RPC vente
+│   ├── batch_rent.py       # Batch XML-RPC location
+│   ├── .env                # Credentials Odoo (non versionné)
 │   ├── .env.example        # Template des variables d'environnement
 │   └── requirements.txt
 ├── notebooks/
-│   ├── 01_eda_cleaning.ipynb      # Nettoyage des données
-│   └── 03_rental_model.ipynb      # Entraînement modèle location
+│   ├── 01_eda_cleaning.ipynb
+│   └── 03_rental_model.ipynb
 ├── data/
-│   └── fetch_statbel.py    # Téléchargement données Statbel
-├── streamlit_app.py        # Interface de test (2 onglets : vente + location)
-├── GUIDE_VPS.md            # Guide de mise en production (Philippe)
+│   └── fetch_statbel.py
+├── streamlit_app.py
+├── GUIDE_VPS.md            # Guide de mise en production Windows Server
 └── README.md
 ```
 
 ---
 
-## Installation
+## Déploiement — VPS OVH Windows Server
 
-### 1. API Flask (VPS OVH)
+### Prérequis
+- Python 3.11+
+- NSSM (Non-Sucking Service Manager)
+- Modèles `.pkl` transférés via Google Drive + gdown
 
-```bash
+### 1. Installation
+
+```powershell
 git clone https://github.com/dominys-be/immo-prediction.git
 cd immo-prediction
 
 python -m venv venv
-source venv/bin/activate
-pip install -r immo_api/requirements.txt
-
-# Copier les modèles (depuis le PC de développement)
-# scp immo_api/models/model.pkl immo@[IP_VPS]:~/immo-prediction/immo_api/models/
-# scp immo_api/models/rental_model.pkl immo@[IP_VPS]:~/immo-prediction/immo_api/models/
-
-# Lancer en production (Gunicorn)
-gunicorn -w 2 -b 0.0.0.0:5000 "immo_api.app:app"
+venv\Scripts\activate
+pip install -r immo_api\requirements.txt
+pip install pip-system-certs   # Fix SSL sur Windows Server
 ```
 
-Tester l'API :
+### 2. Variables d'environnement
 
-```bash
-curl http://localhost:5000/health
-curl http://localhost:5000/health-rent
-
-curl -X POST http://localhost:5000/predict \
-  -H "Content-Type: application/json" \
-  -d '{"living_area": 120, "bedroom_count": 3, "room_count": 5,
-       "number_of_facades": 2, "postal_code": 9000, "region": "Flanders"}'
-
-curl -X POST http://localhost:5000/predict-rent \
-  -H "Content-Type: application/json" \
-  -d '{"living_area": 80, "bedroom_count": 2, "room_count": 3,
-       "number_of_facades": 1, "postal_code": 1000, "region": "Brussels"}'
+Créer `immo_api\.env` :
+```
+ODOO_URL=https://votre-societe.odoo.com
+ODOO_DB=nom-de-la-base
+ODOO_USER=email@exemple.com
+ODOO_APIKEY=cle-api-odoo
+ODOO_MODEL=x_estimation
 ```
 
-### 2. Scripts batch Odoo (VPS OVH)
-
-```bash
-cd odoo_batch
-cp .env.example .env
-nano .env   # Remplir les identifiants Odoo + URL de l'API
-
-pip install -r requirements.txt
-
-# Test manuel (sans écriture dans Odoo)
-python batch.py --dry-run
-python batch_rent.py --dry-run
-
-# Exécution normale
-python batch.py
-python batch_rent.py
+Créer `odoo_batch\.env` (même contenu + URL API) :
+```
+ODOO_URL=https://votre-societe.odoo.com
+ODOO_DB=nom-de-la-base
+ODOO_USER=email@exemple.com
+ODOO_APIKEY=cle-api-odoo
+ODOO_MODEL=x_estimation
+API_URL=http://localhost:8080/predict
 ```
 
-Configurer le cron (toutes les 3 jours) :
+### 3. Service Windows (NSSM)
 
-```bash
-crontab -e
-0 0 */3 * * cd /home/immo/immo-prediction && /home/immo/immo-prediction/venv/bin/python odoo_batch/batch.py >> logs/batch.log 2>&1
-0 0 */3 * * cd /home/immo/immo-prediction && /home/immo/immo-prediction/venv/bin/python odoo_batch/batch_rent.py >> logs/batch_rent.log 2>&1
+```powershell
+nssm install ImmoApp "C:\...\venv\Scripts\python.exe"
+nssm set ImmoApp AppParameters "-m waitress --host=0.0.0.0 --port=8080 app:app"
+nssm set ImmoApp AppDirectory "C:\...\immo_api"
+nssm set ImmoApp AppStdout "C:\...\logs\access.log"
+nssm set ImmoApp AppStderr "C:\...\logs\error.log"
+nssm start ImmoApp
 ```
 
-### 3. Interface Streamlit (test local)
+### 4. Firewall Windows
 
-```bash
-pip install streamlit geopy
-streamlit run streamlit_app.py
+```powershell
+New-NetFirewallRule -DisplayName "Flask API 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
 ```
+
+### 5. Planificateur de tâches (batch — tous les 3 jours)
+
+Via Planificateur de tâches Windows :
+- Programme : `C:\...\venv\Scripts\python.exe`
+- Arguments : `C:\...\odoo_batch\batch.py`
+- Déclencheur : tous les 3 jours à 02h00
 
 ---
 
-## Endpoint `/predict` — Vente
+## Configuration Odoo Studio
 
-**POST** `http://votre-vps:5000/predict`
+### Modèle : `x_estimation`
 
-Champs obligatoires :
+**Action automatisée — Webhook instantané :**
+- Déclencheur : **À la création**
+- Type : Envoyer une notification webhook
+- URL : `http://[IP_VPS]:8080/odoo-webhook`
+- Champs : tous les champs `x_studio_x_*` + `id`
 
-| Champ | Type | Description |
-|-------|------|-------------|
-| `room_count` | int | Nombre de pièces total |
-| `living_area` | float | Surface habitable (m²) |
-| `number_of_facades` | int | Nombre de façades (1–4) |
-| `bedroom_count` | int | Nombre de chambres |
+### Champs Odoo Studio
 
-Champs optionnels (améliorent la précision) :
+| Champ Odoo (technique) | Variable API | Modèle |
+|------------------------|--------------|--------|
+| `x_studio_x_transaction_type` | — | routage vente / location |
+| `x_studio_x_living_area` | `living_area` | vente + location |
+| `x_studio_x_bedroom_count` | `bedroom_count` | vente + location |
+| `x_studio_x_room_count` | `room_count` | vente + location |
+| `x_studio_x_facades` | `number_of_facades` | vente + location |
+| `x_studio_x_street` | `street` | vente + location |
+| `x_studio_x_commune` | `commune` | vente + location |
+| `x_studio_x_postal_code` | `postal_code` | vente + location |
+| `x_studio_x_region` | `region` | vente + location |
+| `x_studio_x_state_of_building` | `state_of_building` | vente + location |
+| `x_studio_x_type_of_property` | `type_of_property` | vente + location |
+| `x_studio_x_construction_year` | `construction_year` | vente + location |
+| `x_studio_x_heating_type` | `heating_type` | vente + location |
+| `x_studio_x_garage` | `garage` | vente + location |
+| `x_studio_x_garden` | `garden` | vente + location |
+| `x_studio_x_garden_area` | `garden_area` | vente + location |
+| `x_studio_x_swimming_pool` | `swimming_pool` | vente + location |
+| `x_studio_x_terrace` | `terrace` | vente + location |
+| `x_studio_x_fireplace` | `fireplace` | vente + location |
+| `x_studio_x_lift` | `lift` | vente + location |
+| `x_studio_x_solar_panels` | `has_solar_panels` | vente + location |
+| `x_studio_x_peb` | `peb` | vente uniquement |
+| `x_studio_x_avis` | `avis` | vente uniquement |
+| `x_studio_x_predicted_price` | ← résultat vente | écrit par webhook + batch |
+| `x_studio_x_predicted_rent` | ← résultat location | écrit par webhook + batch |
 
-| Champ | Type | Exemple |
-|-------|------|---------|
-| `postal_code` | int | `9000` |
-| `region` | string | `"Flanders"`, `"Wallonia"`, `"Brussels"` |
-| `commune` | string | `"Gent"`, `"Liège"` |
-| `street` | string | `"Kortrijksesteenweg"` (géocodage OpenStreetMap) |
-| `house_number` | string | `"48"` |
-| `type_of_property` | string | `"HOUSE"`, `"APARTMENT"`, `"VILLA"`, `"STUDIO"` |
-| `state_of_building` | string | `"GOOD"`, `"NEW"`, `"FAIR"`, `"POOR"`, `"NEEDS_RENOVATION"` |
-| `peb` | string | `"A"` à `"G"` (multiplicateur post-prédiction) |
-| `avis` | string | `"A"` à `"G"` (multiplicateur post-prédiction) |
+> **Note :** Odoo Studio ajoute automatiquement le préfixe `x_studio_` à tous les champs personnalisés, d'où le double préfixe `x_studio_x_`.
 
-Réponse :
+---
 
+## Endpoints API
+
+### `GET /health`
 ```json
 {
-  "predicted_price": 285000.00,
-  "currency": "EUR"
+  "status": "ok",
+  "model_name": "RandomForest",
+  "r2": 0.8203,
+  "mae": 66891.73,
+  "feature_count": 25,
+  "version": "2.0"
 }
 ```
+
+### `POST /predict` — Vente
+
+Champs obligatoires : `room_count`, `living_area`, `number_of_facades`, `bedroom_count`
+
+Champs optionnels : `postal_code`, `region`, `commune`, `street`, `type_of_property`, `state_of_building`, `peb`, `avis`, `construction_year`, `heating_type`, `garage`, `garden`, `swimming_pool`, `terrace`, `fireplace`, `lift`, `has_solar_panels`
+
+```json
+{ "predicted_price": 285000.00, "currency": "EUR" }
+```
+
+### `POST /predict-rent` — Location
+
+Champs : mêmes que `/predict` (sans `peb` ni `avis`)
+
+```json
+{ "predicted_rent": 1150.00, "currency": "EUR", "unit": "per month" }
+```
+
+### `POST /odoo-webhook`
+
+Reçoit le payload Odoo → prédit → écrit le résultat via XML-RPC dans Odoo.
 
 ### Multiplicateurs PEB et Avis (vente uniquement)
 
@@ -182,67 +229,10 @@ Réponse :
 
 ---
 
-## Endpoint `/predict-rent` — Location
-
-**POST** `http://votre-vps:5000/predict-rent`
-
-| Champ | Type | Exemple |
-|-------|------|---------|
-| `living_area` | float | `80` |
-| `bedroom_count` | int | `2` |
-| `room_count` | int | `3` |
-| `number_of_facades` | int | `1` |
-| `postal_code` | int | `1000` |
-| `region` | string | `"Brussels"` |
-| `commune` | string | `"Ixelles"` |
-| `street` | string | `"Rue de la Loi"` |
-| `furnished` | boolean | `true` / `false` |
-| `type_of_property` | string | `"APARTMENT"` |
-| `state_of_building` | string | `"GOOD"` |
-
-Réponse :
-
-```json
-{
-  "predicted_rent": 1150.00,
-  "currency": "EUR",
-  "unit": "per month"
-}
-```
-
-> PEB et Avis ne s'appliquent **pas** aux estimations de loyer.
-
----
-
-## Champs Odoo Studio
-
-| Champ Odoo | Variable API | Modèle |
-|------------|--------------|--------|
-| `x_transaction_type` | — | `vente` ou `location` (routage automatique) |
-| `x_living_area` | `living_area` | vente + location |
-| `x_bedroom_count` | `bedroom_count` | vente + location |
-| `x_room_count` | `room_count` | vente + location |
-| `x_facades` | `number_of_facades` | vente + location |
-| `x_street` | `street` | vente + location |
-| `x_commune` | `commune` | vente + location |
-| `x_postal_code` | `postal_code` | vente + location |
-| `x_region` | `region` | vente + location |
-| `x_state_of_building` | `state_of_building` | vente + location |
-| `x_type_of_property` | `type_of_property` | vente + location |
-| `x_peb` | `peb` | vente uniquement |
-| `x_avis` | `avis` | vente uniquement |
-| `x_furnished` | `furnished` | location uniquement |
-| `x_predicted_price` | ← résultat vente | écrit par batch.py |
-| `x_predicted_rent` | ← résultat location | écrit par batch_rent.py |
-
----
-
 ## Données Statbel
 
-Deux variables géographiques enrichissent le modèle :
-
 - **MedianIncome** : revenu net imposable médian par commune ([statbel.fgov.be](https://statbel.fgov.be), CC BY 4.0)
-- **PopulationDensity** : densité de population par commune en hab./km² ([statbel.fgov.be](https://statbel.fgov.be), CC BY 4.0)
+- **PopulationDensity** : densité de population par commune en hab./km²
 
 ```bash
 python data/fetch_statbel.py
@@ -253,6 +243,6 @@ python data/fetch_statbel.py
 
 ## Licence
 
-Les données Statbel sont publiées sous licence **Creative Commons CC BY 4.0** — utilisation commerciale autorisée avec attribution.
+Les données Statbel sont publiées sous licence **Creative Commons CC BY 4.0**.
 
 Le code source est la propriété de Dominys BV.
