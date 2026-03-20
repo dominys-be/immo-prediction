@@ -886,9 +886,11 @@ def _build_commercial_features(inp: dict) -> tuple[dict, str]:
 
 
 def _apply_commercial_adjusters(base_price: float, inp: dict, commercial_type_raw: str) -> float:
-    """Apply post-prediction adjusters (PEB + warehouse/shop-specific extras)."""
-    peb_raw = str(inp.get("peb", "D")).strip().upper()
-    peb_pct = PEB_SCORES.get(peb_raw, 0.0)
+    """Apply post-prediction adjusters (PEB + Avis + warehouse/shop-specific extras)."""
+    peb_raw  = str(inp.get("peb",  "D")).strip().upper()
+    avis_raw = str(inp.get("avis", "D")).strip().upper()
+    peb_pct  = PEB_SCORES.get(peb_raw,  0.0)
+    avis_pct = AVIS_SCORES.get(avis_raw, 0.0)
 
     extra = 0.0
     ct_upper = commercial_type_raw.upper()
@@ -906,7 +908,7 @@ def _apply_commercial_adjusters(base_price: float, inp: dict, commercial_type_ra
         if inp.get("vitrine"):
             extra += 0.05
 
-    total_adj = (1 + peb_pct) * (1 + extra)
+    total_adj = (1 + peb_pct) * (1 + avis_pct) * (1 + extra)
     # Safety clamp: prevent runaway values (max ±30%)
     total_adj = min(max(total_adj, 0.80), 1.30)
     return base_price * total_adj
