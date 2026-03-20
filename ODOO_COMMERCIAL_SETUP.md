@@ -6,14 +6,14 @@ Ce guide décrit les étapes manuelles à effectuer dans Odoo Studio pour active
 
 ---
 
-## Étape 1 — Ajouter les valeurs "Ticari-Satış" et "Ticari-Kira" au champ Type de transaction
+## Étape 1 — Ajouter les valeurs "commercial-vente" et "commercial-location" au champ Type de transaction
 
 1. Ouvrir **Odoo Studio** → modèle **Estimation** (`x_estimation`)
 2. Cliquer sur le champ **"Type de transaction"** (`x_studio_x_transaction_type`)
 3. Dans les propriétés du champ → **"Modifier les valeurs de sélection"**
 4. Ajouter les deux nouvelles valeurs :
-   - Valeur technique : `Ticari-Satış` — Libellé : `Vente commerciale`
-   - Valeur technique : `Ticari-Kira` — Libellé : `Location commerciale`
+   - Valeur technique : `commercial-vente` — Libellé : `Vente commerciale`
+   - Valeur technique : `commercial-location` — Libellé : `Location commerciale`
 5. Sauvegarder
 
 ---
@@ -43,7 +43,7 @@ Dans Studio → Estimation → **"Nouveaux champs"** :
 3. Nommer la section : `Bien Commercial`
 4. Faire glisser dans cette section les champs créés à l'étape 2
 5. Pour chaque champ commercial, définir la **condition de visibilité** :
-   - Condition : `Type de transaction est dans [Ticari-Satış, Ticari-Kira]`
+   - Condition : `Type de transaction est dans [commercial-vente, commercial-location]`
    - *(Dans Studio : propriété "Visible si" → sélectionner le champ transaction_type)*
 
 6. Optionnel : masquer les champs résidentiels (chambres, pièces, jardin, etc.) quand le type est commercial via la même logique de visibilité inversée.
@@ -83,8 +83,8 @@ Pour **"Location commerciale"**, même test → le champ **"Loyer estimé commer
 
 | Champ Odoo (technique) | Variable API | Modèle |
 |---|---|---|
-| `x_studio_x_commercial_type` | `commercial_type` | commercial (satış + kira) |
-| `x_studio_x_surface_totale` | `surface_totale` | commercial (satış + kira) |
+| `x_studio_x_commercial_type` | `commercial_type` | commercial (vente + location) |
+| `x_studio_x_surface_totale` | `surface_totale` | commercial (vente + location) |
 | `x_studio_x_region` | `region` | partagé avec résidentiel |
 | `x_studio_x_postal_code` | `postal_code` | partagé avec résidentiel |
 | `x_studio_x_commune` | `commune` | partagé avec résidentiel |
