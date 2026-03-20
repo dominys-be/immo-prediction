@@ -10,6 +10,13 @@ Score adjustments (from scores.md, applied after ML prediction):
 PEB is NOT a model feature — only used for the post-prediction score multiplier.
 Avis is a new quality rating field — only used for the post-prediction score multiplier.
 Commune (optional) is geocoded via a static Belgian centroid table to improve lat/lon accuracy.
+
+Commercial models (commercial_sale_model.pkl / commercial_rent_model.pkl):
+  Additional post-prediction adjusters (not in model features):
+  - hauteur_plafond > 6m  (warehouse/industrial only): +10%
+  - quai_chargement True  (warehouse/industrial only): +8%
+  - vitrine True          (shop/horeca only):          +5%
+  - Clamp: total_adj clamped to [0.80, 1.30]
 """
 
 import json
@@ -37,6 +44,17 @@ _RENTAL_FEATURE_NAMES: list[str] | None = None
 
 _RENTAL_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "rental_model.pkl")
 _RENTAL_FEAT_PATH  = os.path.join(os.path.dirname(__file__), "models", "rental_model_metadata.json")
+
+# Commercial models (sale + rent)
+_COMM_SALE_MODEL = None
+_COMM_SALE_FEATURE_NAMES: list[str] | None = None
+_COMM_RENT_MODEL = None
+_COMM_RENT_FEATURE_NAMES: list[str] | None = None
+
+_COMM_SALE_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "commercial_sale_model.pkl")
+_COMM_SALE_FEAT_PATH  = os.path.join(os.path.dirname(__file__), "models", "commercial_sale_metadata.json")
+_COMM_RENT_MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "commercial_rent_model.pkl")
+_COMM_RENT_FEAT_PATH  = os.path.join(os.path.dirname(__file__), "models", "commercial_rent_metadata.json")
 
 
 def get_model():
@@ -99,6 +117,63 @@ def get_rental_metadata() -> dict:
     return {}
 
 
+# ── Commercial model helpers ──────────────────────────────────────────────────
+
+def _get_commercial_sale_model():
+    global _COMM_SALE_MODEL
+    if _COMM_SALE_MODEL is None:
+        _logger.info("Loading commercial sale model from %s", _COMM_SALE_MODEL_PATH)
+        _COMM_SALE_MODEL = joblib.load(_COMM_SALE_MODEL_PATH)
+    return _COMM_SALE_MODEL
+
+
+def _get_commercial_sale_feature_names() -> list[str]:
+    global _COMM_SALE_FEATURE_NAMES
+    if _COMM_SALE_FEATURE_NAMES is None:
+        if os.path.exists(_COMM_SALE_FEAT_PATH):
+            with open(_COMM_SALE_FEAT_PATH) as f:
+                _COMM_SALE_FEATURE_NAMES = json.load(f).get("features", [])
+        else:
+            _COMM_SALE_FEATURE_NAMES = list(
+                getattr(_get_commercial_sale_model(), "feature_names_in_", [])
+            )
+    return _COMM_SALE_FEATURE_NAMES
+
+
+def _get_commercial_rent_model():
+    global _COMM_RENT_MODEL
+    if _COMM_RENT_MODEL is None:
+        _logger.info("Loading commercial rental model from %s", _COMM_RENT_MODEL_PATH)
+        _COMM_RENT_MODEL = joblib.load(_COMM_RENT_MODEL_PATH)
+    return _COMM_RENT_MODEL
+
+
+def _get_commercial_rent_feature_names() -> list[str]:
+    global _COMM_RENT_FEATURE_NAMES
+    if _COMM_RENT_FEATURE_NAMES is None:
+        if os.path.exists(_COMM_RENT_FEAT_PATH):
+            with open(_COMM_RENT_FEAT_PATH) as f:
+                _COMM_RENT_FEATURE_NAMES = json.load(f).get("features", [])
+        else:
+            _COMM_RENT_FEATURE_NAMES = list(
+                getattr(_get_commercial_rent_model(), "feature_names_in_", [])
+            )
+    return _COMM_RENT_FEATURE_NAMES
+
+
+def get_commercial_metadata() -> dict:
+    """Return metadata for both commercial models (sale + rent)."""
+    meta: dict = {}
+    for path, key in (
+        (_COMM_SALE_FEAT_PATH, "sale"),
+        (_COMM_RENT_FEAT_PATH, "rent"),
+    ):
+        if os.path.exists(path):
+            with open(path) as f:
+                meta[key] = json.load(f)
+    return meta
+
+
 # --------------------------------------------------------------------------- #
 # Score multiplier tables (boss-defined, scores.md)
 # PEB and Avis are applied AFTER the ML prediction — they are NOT model features.
@@ -136,6 +211,21 @@ HEATING_MAP = {
     "HEAT_PUMP": 3, "PELLET": 4, "WOOD": 5, "SOLAR": 6,
     "Gas": 0, "Electric": 2, "Heat pump": 3,
 }
+COMMERCIAL_TYPE_MAP = {
+    # English (Immoweb API values)
+    "COMMERCIAL": 0, "RETAIL": 0, "SHOP": 0,
+    "OFFICE": 1, "OFFICES": 1,
+    "WAREHOUSE": 2, "STORAGE": 2,
+    "INDUSTRIAL": 3, "INDUSTRY": 3,
+    "HORECA": 4, "RESTAURANT": 4, "HOTEL": 4,
+    # French (Odoo display values)
+    "Commerce": 0, "Dükkan": 0,
+    "Bureau": 1, "Ofis": 1,
+    "Entrepôt": 2, "Entrepot": 2, "Depo": 2,
+    "Industrie": 3, "Sanayi": 3,
+    "Horeca": 4,
+}
+
 FLOODING_ZONE_COLS = [
     "FZ_CIRCUMSCRIBED_FLOOD_ZONE",
     "FZ_CIRCUMSCRIBED_WATERSIDE_ZONE",
@@ -676,3 +766,205 @@ def predict_rent(inp: dict) -> float:
     peb_pct  = PEB_SCORES.get(peb_raw,  0.0)
     avis_pct = AVIS_SCORES.get(avis_raw, 0.0)
     return base_rent * (1 + peb_pct) * (1 + avis_pct)
+
+
+# --------------------------------------------------------------------------- #
+# Commercial prediction (sale + rent)
+# --------------------------------------------------------------------------- #
+
+_COMMERCIAL_DEFAULTS = {
+    "TotalSurface":                      200.0,
+    "CommercialType_Num":                0,       # retail
+    "FloorCount":                        1,
+    "FloorNumber":                       0,
+    "PostalCode":                        1000,
+    "Latitude":                          50.8503,
+    "Longitude":                         4.3517,
+    "DistanceToBrussels":                80.0,
+    "MunicipalityAvgCommercialPricePerM2": 3000.0,
+    "ConstructionYear":                  1985,
+    "BuildingAge":                       40,
+    "StateOfBuilding_Num":               1,
+    "HeatingType_Num":                   0,
+    "HasParking":                        0,
+    "HasLift":                           0,
+    "Region_Num":                        0,
+    "MedianIncome":                      25000,
+    "PopulationDensity":                 400,
+}
+
+_COMMERCIAL_ALIAS = {
+    "surface_totale":        "TotalSurface",
+    "total_surface":         "TotalSurface",
+    "living_area":           "TotalSurface",   # fallback if residential field sent
+    "commercial_type":       "_commercial_type",
+    "floor_count":           "FloorCount",
+    "floor_number":          "FloorNumber",
+    "postal_code":           "PostalCode",
+    "latitude":              "Latitude",
+    "longitude":             "Longitude",
+    "distance_to_brussels":  "DistanceToBrussels",
+    "construction_year":     "ConstructionYear",
+    "state_of_building":     "_state",
+    "heating_type":          "_heating",
+    "has_parking":           "HasParking",
+    "parking":               "HasParking",
+    "has_lift":              "HasLift",
+    "lift":                  "HasLift",
+    "region":                "_region",
+    "commune":               "_commune",
+}
+
+# Commercial types for which warehouse-specific adjusters apply
+_WAREHOUSE_TYPES = {"WAREHOUSE", "INDUSTRIAL", "Entrepôt", "Entrepot", "Depo", "Sanayi"}
+# Commercial types for which shop-specific adjusters apply
+_SHOP_TYPES = {"COMMERCIAL", "RETAIL", "SHOP", "HORECA", "Commerce", "Dükkan", "Horeca"}
+
+
+def _build_commercial_features(inp: dict) -> tuple[dict, str]:
+    """
+    Map user input to the commercial model feature space.
+
+    Returns (feature_dict, commercial_type_raw) where commercial_type_raw
+    is the original string value for use in post-prediction adjusters.
+    """
+    data: dict = dict(_COMMERCIAL_DEFAULTS)
+    commercial_type_raw = str(inp.get("commercial_type", "COMMERCIAL")).strip()
+
+    for k, v in inp.items():
+        if k in ("peb",):
+            continue
+        mapped = _COMMERCIAL_ALIAS.get(k, k)
+        if mapped.startswith("_"):
+            data[mapped] = v
+        else:
+            data[mapped] = int(v) if isinstance(v, bool) else v
+
+    # Commune → lat/lon
+    commune_raw = data.pop("_commune", None)
+    if commune_raw:
+        coords = get_commune_latlon(str(commune_raw))
+        if coords:
+            data["Latitude"], data["Longitude"] = coords
+            data["DistanceToBrussels"] = _haversine(
+                coords[0], coords[1],
+                _BRUSSELS_COORDS[0], _BRUSSELS_COORDS[1],
+            )
+
+    # Commercial type encoding
+    ct_raw = data.pop("_commercial_type", commercial_type_raw)
+    commercial_type_raw = str(ct_raw).strip()
+    data["CommercialType_Num"] = COMMERCIAL_TYPE_MAP.get(
+        commercial_type_raw,
+        COMMERCIAL_TYPE_MAP.get(commercial_type_raw.upper(), 0),
+    )
+
+    # State of building
+    if "_state" in data:
+        raw = str(data.pop("_state")).strip()
+        data["StateOfBuilding_Num"] = STATE_MAP.get(raw, STATE_MAP.get(raw.upper(), 1))
+
+    # Region
+    if "_region" in data:
+        raw = str(data.pop("_region")).strip()
+        data["Region_Num"] = REGION_MAP.get(raw, 0)
+
+    # Heating
+    if "_heating" in data:
+        raw = str(data.pop("_heating")).strip()
+        data["HeatingType_Num"] = HEATING_MAP.get(raw, HEATING_MAP.get(raw.upper(), 0))
+
+    # BuildingAge from ConstructionYear
+    cy = data.get("ConstructionYear", 1985)
+    data["BuildingAge"] = max(0, 2025 - int(cy))
+
+    # LogSurface — model trained with this feature
+    surface = float(data.get("TotalSurface", 1))
+    data["LogSurface"] = math.log1p(max(surface, 0))
+
+    return data, commercial_type_raw
+
+
+def _apply_commercial_adjusters(base_price: float, inp: dict, commercial_type_raw: str) -> float:
+    """Apply post-prediction adjusters (PEB + warehouse/shop-specific extras)."""
+    peb_raw = str(inp.get("peb", "D")).strip().upper()
+    peb_pct = PEB_SCORES.get(peb_raw, 0.0)
+
+    extra = 0.0
+    ct_upper = commercial_type_raw.upper()
+
+    # Warehouse / industrial adjusters
+    if ct_upper in {t.upper() for t in _WAREHOUSE_TYPES}:
+        hauteur = float(inp.get("hauteur_plafond", 0) or 0)
+        if hauteur > 6:
+            extra += 0.10
+        if inp.get("quai_chargement"):
+            extra += 0.08
+
+    # Shop / horeca adjusters
+    if ct_upper in {t.upper() for t in _SHOP_TYPES}:
+        if inp.get("vitrine"):
+            extra += 0.05
+
+    total_adj = (1 + peb_pct) * (1 + extra)
+    # Safety clamp: prevent runaway values (max ±30%)
+    total_adj = min(max(total_adj, 0.80), 1.30)
+    return base_price * total_adj
+
+
+def predict_commercial_sale(inp: dict) -> float:
+    """
+    Predict Belgian commercial real estate sale price (EUR).
+
+    Required: commercial_type, surface_totale, region (or postal_code)
+    Optional: construction_year, state_of_building, heating_type, has_parking,
+              has_lift, floor_count, commune, peb,
+              hauteur_plafond (warehouse/industrial: +10% if >6m),
+              quai_chargement (warehouse/industrial: +8%),
+              vitrine (shop/horeca: +5%)
+
+    Returns: adjusted sale price in EUR
+    """
+    model         = _get_commercial_sale_model()
+    feature_names = _get_commercial_sale_feature_names()
+
+    data, commercial_type_raw = _build_commercial_features(inp)
+
+    if feature_names:
+        for feat in feature_names:
+            if feat not in data:
+                data[feat] = 0
+        df_row = pd.DataFrame([data], columns=feature_names)
+    else:
+        df_row = pd.DataFrame([data])
+
+    # Model trained on log1p(price) — convert back to original scale
+    log_pred = float(model.predict(df_row)[0])
+    base_price = math.expm1(log_pred) if log_pred > 1 else log_pred
+    return _apply_commercial_adjusters(base_price, inp, commercial_type_raw)
+
+
+def predict_commercial_rent(inp: dict) -> float:
+    """
+    Predict Belgian commercial real estate monthly rent (EUR/month).
+
+    Same input schema as predict_commercial_sale().
+    Returns: adjusted monthly rent in EUR
+    """
+    model         = _get_commercial_rent_model()
+    feature_names = _get_commercial_rent_feature_names()
+
+    data, commercial_type_raw = _build_commercial_features(inp)
+
+    if feature_names:
+        for feat in feature_names:
+            if feat not in data:
+                data[feat] = 0
+        df_row = pd.DataFrame([data], columns=feature_names)
+    else:
+        df_row = pd.DataFrame([data])
+
+    # Model trained on log1p(rent) — convert back to original scale
+    log_pred = float(model.predict(df_row)[0])
+    base_rent = math.expm1(log_pred) if log_pred > 1 else log_pred
+    return _apply_commercial_adjusters(base_rent, inp, commercial_type_raw)

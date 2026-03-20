@@ -4,8 +4,10 @@ API de prédiction de prix et de loyers pour l'immobilier belge, intégrée avec
 
 | Modèle | R² | MAE | Données |
 |--------|----|-----|---------|
-| Vente | 0.8203 | €66 892 | 92 544 annonces · 25 variables |
-| Location | 0.8124 | €230/mois | 9 921 annonces · 24 variables |
+| Vente résidentielle | 0.8203 | €66 892 | 92 544 annonces · 25 variables |
+| Location résidentielle | 0.8124 | €230/mois | 9 921 annonces · 24 variables |
+| Vente commerciale | Après entraînement | Après entraînement | Annonces Immoweb commercial · 18 variables |
+| Location commerciale | Après entraînement | Après entraînement | Annonces Immoweb commercial · 18 variables |
 
 ---
 
@@ -59,11 +61,14 @@ immo-prediction/
 │   └── requirements.txt
 ├── notebooks/
 │   ├── 01_eda_cleaning.ipynb
-│   └── 03_rental_model.ipynb
+│   ├── 03_rental_model.ipynb
+│   └── 04_commercial_model.ipynb  # Entraînement modèles commerciaux
 ├── data/
-│   └── fetch_statbel.py
+│   ├── fetch_statbel.py
+│   └── scrape_commercial.py       # Collecte données Immoweb commercial
 ├── streamlit_app.py
-├── GUIDE_VPS.md            # Guide de mise en production Windows Server
+├── GUIDE_VPS.md                   # Guide de mise en production Windows Server
+├── ODOO_COMMERCIAL_SETUP.md       # Guide Studio — configuration biens commerciaux
 └── README.md
 ```
 
@@ -209,6 +214,28 @@ Champs : mêmes que `/predict` (sans `peb` ni `avis`)
 
 ```json
 { "predicted_rent": 1150.00, "currency": "EUR", "unit": "per month" }
+```
+
+### `POST /predict-commercial` — Vente ou Location commerciale
+
+Champs obligatoires : `commercial_type`, `surface_totale`, `transaction_type`
+
+`commercial_type` : `Commerce` / `Bureau` / `Entrepôt` / `Industrie` / `Horeca`
+
+`transaction_type` : `Ticari-Satış` (vente) ou `Ticari-Kira` (location)
+
+Champs optionnels : `region`, `postal_code`, `commune`, `construction_year`, `state_of_building`, `peb`, `heating_type`, `has_parking`, `has_lift`, `floor_count`, `hauteur_plafond`, `quai_chargement`, `vitrine`
+
+```json
+// Vente
+{ "predicted_price_commercial": 450000.00, "currency": "EUR" }
+// Location
+{ "predicted_rent_commercial": 2800.00, "currency": "EUR", "unit": "per month" }
+```
+
+### `GET /health-commercial`
+```json
+{ "status": "ok", "sale_model": {"r2": 0.xx, "mae": xx}, "rental_model": {...} }
 ```
 
 ### `POST /odoo-webhook`

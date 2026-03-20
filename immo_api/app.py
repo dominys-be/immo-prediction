@@ -21,7 +21,11 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent / ".env")
 
-from predictor import predict, get_metadata, get_feature_names, predict_rent, get_rental_metadata
+from predictor import (
+    predict, get_metadata, get_feature_names,
+    predict_rent, get_rental_metadata,
+    predict_commercial_sale, predict_commercial_rent, get_commercial_metadata,
+)
 
 # Odoo credentials for webhook write-back
 _ODOO_URL   = os.getenv("ODOO_URL", "")
@@ -55,6 +59,15 @@ _WEBHOOK_FIELD_MAP = {
     "x_studio_x_lift":              "lift",
     "x_studio_x_solar_panels":      "has_solar_panels",
     "x_studio_x_transaction_type":  "transaction_type",
+    "x_studio_x_bien_type":         "bien_type",
+    # Commercial-specific fields
+    "x_studio_x_commercial_type":   "commercial_type",
+    "x_studio_x_surface_totale":    "surface_totale",
+    "x_studio_x_hauteur_plafond":   "hauteur_plafond",
+    "x_studio_x_quai_chargement":   "quai_chargement",
+    "x_studio_x_vitrine":           "vitrine",
+    "x_studio_x_zone_commerciale":  "zone_commerciale",
+    "x_studio_x_floor_count":       "floor_count",
 }
 
 _geolocator = Nominatim(user_agent="immoapp-price-predictor")
@@ -210,6 +223,71 @@ def health_rent():
         return jsonify({"status": "error", "detail": str(e)}), 503
 
 
+@app.post("/predict-commercial")
+def predict_commercial():
+    """
+    Predict Belgian commercial real estate price (sale or monthly rent).
+
+    Required fields: commercial_type, surface_totale, transaction_type
+    Optional: region, postal_code, commune, construction_year, state_of_building,
+              heating_type, has_parking, has_lift, floor_count, peb,
+              hauteur_plafond, quai_chargement, vitrine
+    """
+    body = request.get_json(silent=True)
+    if not body:
+        return jsonify({"error": "Request body must be JSON"}), 400
+
+    required = ["commercial_type", "surface_totale", "transaction_type"]
+    missing = [f for f in required if f not in body]
+    if missing:
+        return jsonify({"error": f"Missing required fields: {missing}"}), 400
+
+    surface = float(body.get("surface_totale", 0))
+    if not (5 <= surface <= 100_000):
+        return jsonify({"error": "surface_totale must be 5–100 000 m²"}), 400
+
+    tx = str(body.get("transaction_type", "")).lower()
+    is_rent = "kira" in tx or "rent" in tx or "louer" in tx
+
+    street = body.get("street", "").strip()
+    if street:
+        coords = _geocode(street, str(body.get("house_number", "")), body.get("postal_code", 1000))
+        if coords:
+            body = dict(body, latitude=coords[0], longitude=coords[1])
+
+    try:
+        if is_rent:
+            result = predict_commercial_rent(body)
+            return jsonify({
+                "predicted_rent_commercial": round(result, 2),
+                "currency": "EUR",
+                "unit": "per month",
+            })
+        else:
+            result = predict_commercial_sale(body)
+            return jsonify({
+                "predicted_price_commercial": round(result, 2),
+                "currency": "EUR",
+            })
+    except Exception as e:
+        _logger.exception("Commercial prediction failed")
+        return jsonify({"error": f"Prediction failed: {str(e)}"}), 500
+
+
+@app.get("/health-commercial")
+def health_commercial():
+    """Commercial models liveness + info endpoint."""
+    try:
+        meta = get_commercial_metadata()
+        return jsonify({
+            "status":       "ok",
+            "sale_model":   meta.get("sale", {}),
+            "rental_model": meta.get("rent", {}),
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "detail": str(e)}), 503
+
+
 @app.get("/features")
 def features():
     """
@@ -259,6 +337,7 @@ def _process_webhook(body):
             payload[pred_field] = val
 
     transaction_type = payload.pop("transaction_type", "") or ""
+    bien_type        = payload.pop("bien_type", "") or ""
 
     street = payload.get("street", "").strip()
     if street:
@@ -266,14 +345,27 @@ def _process_webhook(body):
         if coords:
             payload["latitude"], payload["longitude"] = coords
 
-    is_rental = transaction_type.lower() in ("location", "à louer", "a louer", "louer")
+    tx_lower = transaction_type.lower()
+    # Commercial routing: driven by bien_type field ("Commercial" / "Résidentiel")
+    # transaction_type stays unchanged ("À vendre" / "À louer") for both residential and commercial
+    is_commercial = "commercial" in bien_type.lower()
+    is_rental     = "louer" in tx_lower or "rent" in tx_lower or tx_lower in ("location", "a louer")
+    is_comm_rent  = is_commercial and is_rental
+    is_comm_sale  = is_commercial and not is_rental
+
     try:
-        if is_rental:
+        if is_comm_sale:
+            result_value = predict_commercial_sale(payload)
+            write_field  = "x_studio_x_predicted_price_commercial"
+        elif is_comm_rent:
+            result_value = predict_commercial_rent(payload)
+            write_field  = "x_studio_x_predicted_rent_commercial"
+        elif is_rental:
             result_value = predict_rent(payload)
-            write_field = "x_studio_x_predicted_rent"
+            write_field  = "x_studio_x_predicted_rent"
         else:
             result_value = predict(payload)
-            write_field = "x_studio_x_predicted_price"
+            write_field  = "x_studio_x_predicted_price"
     except Exception:
         _logger.exception("Webhook prediction failed for record %s", record_id)
         return

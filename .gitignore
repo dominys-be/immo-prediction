@@ -19,6 +19,8 @@ test_price.py
 ODOO_STUDIO_GUIDE.md
 OVH_DEPLOYMENT.md
 scores.md
+DEPLOY_TICARI.md
+DEPLOY_PLAN.md
 
 # ── Odoo batch credentials (never commit) ────────────────────────────────────
 odoo_batch/.env
@@ -46,8 +48,7 @@ env/
 # ── Environment variables / secrets ──────────────────────────────────────────
 .env
 .env.*
-!.env.example
-!**/.env.example
+.env.example
 
 # ── Editor / OS ──────────────────────────────────────────────────────────────
 .DS_Store

@@ -175,7 +175,6 @@
           <p style="margin: 0; font-size: 20px; font-weight: bold; color: #e67e22;">
             <span t-out="pess_str"/> EUR<t t-if="is_location">/mois</t>
           </p>
-          <p style="margin: 4px 0 0 0; font-size: 10px; color: #7f8c8d;">-10%</p>
         </td>
         <td width="4%"/>
         <td width="32%" style="padding: 15px; background: #eaf4fb; border: 2px solid #2980b9; border-radius: 6px;">
@@ -192,7 +191,6 @@
           <p style="margin: 0; font-size: 20px; font-weight: bold; color: #27ae60;">
             <span t-out="opti_str"/> EUR<t t-if="is_location">/mois</t>
           </p>
-          <p style="margin: 4px 0 0 0; font-size: 10px; color: #7f8c8d;">+10%</p>
         </td>
       </tr>
     </table>

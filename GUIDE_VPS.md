@@ -41,8 +41,10 @@ Le tout en moins de 3 secondes.
 
 | Modèle | Données d'entraînement | Précision |
 |--------|----------------------|-----------|
-| Vente | 92.544 annonces Immoweb | MAE ±67.000 EUR |
-| Location | 9.921 annonces Immoweb | MAE ±230 EUR/mois |
+| Vente résidentielle | 92.544 annonces Immoweb | MAE ±67.000 EUR |
+| Location résidentielle | 9.921 annonces Immoweb | MAE ±230 EUR/mois |
+| Vente commerciale | Annonces Immoweb commercial | Voir commercial_sale_metadata.json |
+| Location commerciale | Annonces Immoweb commercial | Voir commercial_rent_metadata.json |
 
 Les estimations tiennent compte de : surface, localisation, PEB, année de construction, état du bâtiment, équipements, et plus de 20 autres critères.
 
@@ -116,6 +118,55 @@ Le système est entièrement autonome :
 | Estimation des nouveaux biens | Toutes les 5 min | Oui |
 | Redémarrage après coupure serveur | Au reboot | Oui |
 | Mise à jour du code | Sur demande | Manuel (développeur) |
+
+---
+
+## Déploiement des modèles commerciaux (après entraînement)
+
+Après avoir exécuté `notebooks/04_commercial_model.ipynb` localement :
+
+### 1. Transférer les modèles vers le VPS
+
+```powershell
+# Depuis votre machine locale (PowerShell)
+scp immo_api\models\commercial_sale_model.pkl immo@51.68.231.173:~/immo-prediction/immo_api/models/
+scp immo_api\models\commercial_rent_model.pkl immo@51.68.231.173:~/immo-prediction/immo_api/models/
+scp immo_api\models\commercial_sale_metadata.json immo@51.68.231.173:~/immo-prediction/immo_api/models/
+scp immo_api\models\commercial_rent_metadata.json immo@51.68.231.173:~/immo-prediction/immo_api/models/
+```
+
+Ou via Google Drive + gdown (si fichiers volumineux) :
+```powershell
+# Sur le VPS (SSH)
+cd ~/immo-prediction/immo_api/models
+gdown "DRIVE_FILE_ID_SALE"   -O commercial_sale_model.pkl
+gdown "DRIVE_FILE_ID_RENT"   -O commercial_rent_model.pkl
+```
+
+### 2. Mettre à jour le code et redémarrer le service
+
+```powershell
+# Sur le VPS (SSH ou PowerShell Windows)
+cd C:\...\immo-prediction
+git pull
+
+# Redémarrer le service Flask (Windows NSSM)
+nssm restart ImmoApp
+```
+
+### 3. Vérifier que les modèles sont chargés
+
+```
+GET http://51.68.231.173:8080/health-commercial
+```
+Réponse attendue : `{"status": "ok", "sale_model": {...}, "rental_model": {...}}`
+
+### 4. Ajouter le batch commercial au Planificateur de tâches Windows
+
+Via Planificateur de tâches Windows :
+- Programme : `C:\...\venv\Scripts\python.exe`
+- Arguments : `C:\...\odoo_batch\batch_commercial.py`
+- Déclencheur : tous les 3 jours à 03h00 (décalé d'1h par rapport aux autres batchs)
 
 ---
 
