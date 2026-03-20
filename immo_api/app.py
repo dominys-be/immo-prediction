@@ -60,14 +60,12 @@ _WEBHOOK_FIELD_MAP = {
     "x_studio_x_solar_panels":      "has_solar_panels",
     "x_studio_x_transaction_type":  "transaction_type",
     "x_studio_x_bien_type":         "bien_type",
-    # Commercial-specific fields
-    "x_studio_x_commercial_type":   "commercial_type",
-    "x_studio_x_surface_totale":    "surface_totale",
-    "x_studio_x_hauteur_plafond":   "hauteur_plafond",
-    "x_studio_x_quai_chargement":   "quai_chargement",
-    "x_studio_x_vitrine":           "vitrine",
-    "x_studio_x_zone_commerciale":  "zone_commerciale",
-    "x_studio_x_floor_count":       "floor_count",
+    # Commercial-specific fields (actual Odoo Studio technical names from webhook payload)
+    "x_studio_type_de_local":           "commercial_type",
+    "x_studio_x_surface_totale":        "surface_totale",
+    "x_studio_hauteur_sous_plafond_m":  "hauteur_plafond",
+    "x_studio_quai_de_chargement":      "quai_chargement",
+    "x_studio_x_vitrine":               "vitrine",
 }
 
 _geolocator = Nominatim(user_agent="immoapp-price-predictor")
@@ -356,10 +354,10 @@ def _process_webhook(body):
     try:
         if is_comm_sale:
             result_value = predict_commercial_sale(payload)
-            write_field  = "x_studio_x_predicted_price_commercial"
+            write_field  = "x_studio_prix_estime_commercial_"
         elif is_comm_rent:
             result_value = predict_commercial_rent(payload)
-            write_field  = "x_studio_x_predicted_rent_commercial"
+            write_field  = "x_studio_loyer_estime_commercial_mois"
         elif is_rental:
             result_value = predict_rent(payload)
             write_field  = "x_studio_x_predicted_rent"

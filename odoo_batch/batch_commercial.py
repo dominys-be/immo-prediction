@@ -64,22 +64,21 @@ FIELD_MAP = {
     "x_studio_x_heating_type":       "heating_type",
     "x_studio_x_peb":                "peb",
     "x_studio_x_lift":               "has_lift",
-    # Commercial-specific fields
-    "x_studio_x_commercial_type":    "commercial_type",
-    "x_studio_x_surface_totale":     "surface_totale",
-    "x_studio_x_hauteur_plafond":    "hauteur_plafond",
-    "x_studio_x_quai_chargement":    "quai_chargement",
-    "x_studio_x_vitrine":            "vitrine",
-    "x_studio_x_floor_count":        "floor_count",
+    # Commercial-specific fields (actual Odoo Studio technical names)
+    "x_studio_type_de_local":           "commercial_type",
+    "x_studio_x_surface_totale":        "surface_totale",
+    "x_studio_hauteur_sous_plafond_m":  "hauteur_plafond",
+    "x_studio_quai_de_chargement":      "quai_chargement",
+    "x_studio_x_vitrine":               "vitrine",
     # Routing fields
-    "x_studio_x_transaction_type":   "transaction_type",
-    "x_studio_x_bien_type":          "bien_type",
+    "x_studio_x_transaction_type":      "transaction_type",
+    "x_studio_x_bien_type":             "bien_type",
 }
 
 ODOO_FIELDS = list(FIELD_MAP.keys()) + [
     "id",
-    "x_studio_x_predicted_price_commercial",
-    "x_studio_x_predicted_rent_commercial",
+    "x_studio_prix_estime_commercial_",
+    "x_studio_loyer_estime_commercial_mois",
 ]
 
 REQUIRED_PREDICT = {"commercial_type", "surface_totale", "transaction_type"}
@@ -108,11 +107,11 @@ def fetch_pending(uid, models):
         ("x_studio_x_bien_type", "=", "Commercial"),
         "|",
         "|",
-        ("x_studio_x_predicted_price_commercial", "=", 0),
-        ("x_studio_x_predicted_price_commercial", "=", False),
+        ("x_studio_prix_estime_commercial_", "=", 0),
+        ("x_studio_prix_estime_commercial_", "=", False),
         "|",
-        ("x_studio_x_predicted_rent_commercial", "=", 0),
-        ("x_studio_x_predicted_rent_commercial", "=", False),
+        ("x_studio_loyer_estime_commercial_mois", "=", 0),
+        ("x_studio_loyer_estime_commercial_mois", "=", False),
     ]
     records = models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
@@ -155,9 +154,9 @@ def call_predict_commercial(payload):
 
 def write_result(uid, models, record_id, value, result_type):
     field = (
-        "x_studio_x_predicted_price_commercial"
+        "x_studio_prix_estime_commercial_"
         if result_type == "sale"
-        else "x_studio_x_predicted_rent_commercial"
+        else "x_studio_loyer_estime_commercial_mois"
     )
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
