@@ -161,7 +161,7 @@ def write_result(uid, models, record_id, value, result_type):
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_MODEL, "write",
-        [[record_id], {field: value}],
+        [[record_id], {field: value, "x_studio_value": value}],
     )
 
 

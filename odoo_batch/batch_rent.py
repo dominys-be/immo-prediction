@@ -140,7 +140,7 @@ def write_rent(uid, models, record_id, rent):
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_RENT_MODEL, "write",
-        [[record_id], {"x_studio_x_predicted_rent": rent}],
+        [[record_id], {"x_studio_x_predicted_rent": rent, "x_studio_value": rent}],
     )
 
 

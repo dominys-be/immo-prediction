@@ -375,7 +375,7 @@ def _process_webhook(body):
         models.execute_kw(
             _ODOO_DB, uid, _ODOO_KEY,
             _ODOO_MODEL, "write",
-            [[record_id], {write_field: round(result_value, 2)}],
+            [[record_id], {write_field: round(result_value, 2), "x_studio_value": round(result_value, 2)}],
         )
         _logger.info("Webhook: record %s → %s = %.2f", record_id, write_field, result_value)
     except Exception:

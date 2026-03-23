@@ -143,7 +143,7 @@ def write_price(uid, models, record_id, price):
     models.execute_kw(
         ODOO_DB, uid, ODOO_PASS,
         ODOO_MODEL, "write",
-        [[record_id], {"x_studio_x_predicted_price": price}],
+        [[record_id], {"x_studio_x_predicted_price": price, "x_studio_value": price}],
     )
 
 
